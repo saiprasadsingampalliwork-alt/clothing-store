@@ -81,7 +81,6 @@ export type Order = {
   razorpayPaymentId?: string;
   notes?: string;
   gift?: { wrap: boolean; message: string; hidePrices: boolean };
-  updates?: "sms" | "whatsapp";
   shipment?: { courier: string; tracking: string; createdAt: string };
   returnRequest?: {
     reason: string;
@@ -436,9 +435,13 @@ type Store = Persisted & {
   askRestock: (entry: { slug: string; color: string; size: string; contact: string }) => Promise<string | null>;
   register: (input: { name: string; email: string; phone: string; password: string }) => Promise<string | null>;
   signIn: (email: string, password: string) => Promise<string | null>;
+  requestSignInCode: (phone: string) => Promise<{ error: string | null; previewCode?: string }>;
+  signInWithCode: (phone: string, code: string) => Promise<string | null>;
   signOut: () => void;
   requestPasswordReset: (email: string) => Promise<{ error: string | null; previewUrl?: string }>;
+  requestPasswordCode: (phone: string) => Promise<{ error: string | null; previewCode?: string }>;
   resetPassword: (token: string, password: string) => Promise<string | null>;
+  resetPasswordWithCode: (phone: string, code: string, password: string) => Promise<string | null>;
   updateProfile: (patch: Partial<Pick<User, "name" | "phone">>) => Promise<void>;
   saveAddress: (address: Address) => Promise<void>;
   removeAddress: (id: string) => Promise<void>;
@@ -449,7 +452,6 @@ type Store = Persisted & {
     delivery: "standard" | "express";
     payment: Order["payment"];
     gift?: Order["gift"];
-    updates?: Order["updates"];
     razorpay?: { orderId: string; paymentId: string; signature: string };
   }) => Promise<Order | string>;
   cancelOrder: (id: string) => Promise<string | null>;
@@ -631,6 +633,17 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const priced = coupon ? evaluateCoupon(coupon, subtotal) : undefined;
     const discount = priced && priced.ok && coupon?.type !== "free_shipping" ? priced.discount : 0;
 
+    async function openSession(result: { token: string; user: Omit<User, "password"> & { addresses?: Address[] } }, password: string) {
+      setCustomerToken(result.token);
+      const user = { ...result.user, password, addresses: result.user.addresses ?? [] };
+      const snapshot = await request<RemoteState>("/bootstrap");
+      setState((current) => {
+        const next = applyRemote({ ...current, user }, snapshot);
+        if (snapshot.bag) queueBag(next.cart, next.wishlist);
+        return next;
+      });
+    }
+
     return {
       ...state,
       ready,
@@ -779,14 +792,32 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             method: "POST",
             body: JSON.stringify({ email, password }),
           });
-          setCustomerToken(result.token);
-          const user = { ...result.user, password, addresses: result.user.addresses ?? [] };
-          const snapshot = await request<RemoteState>("/bootstrap");
-          setState((current) => {
-            const next = applyRemote({ ...current, user }, snapshot);
-            if (snapshot.bag) queueBag(next.cart, next.wishlist);
-            return next;
+          await openSession(result, password);
+          return null;
+        } catch (error) {
+          return error instanceof Error ? error.message : "Could not sign in.";
+        }
+      },
+      requestSignInCode: async (phone) => {
+        if (!remote.current) return { error: "The studio API is not running." };
+        try {
+          const result = await request<{ ok: true; previewCode?: string }>("/customers/login-code", {
+            method: "POST",
+            body: JSON.stringify({ phone }),
           });
+          return { error: null, previewCode: result.previewCode };
+        } catch (error) {
+          return { error: error instanceof Error ? error.message : "Could not send the code." };
+        }
+      },
+      signInWithCode: async (phone, code) => {
+        if (!remote.current) return "The studio API is not running.";
+        try {
+          const result = await request<{ token: string; user: Omit<User, "password"> & { addresses?: Address[] } }>("/customers/login-code/verify", {
+            method: "POST",
+            body: JSON.stringify({ phone, code }),
+          });
+          await openSession(result, "");
           return null;
         } catch (error) {
           return error instanceof Error ? error.message : "Could not sign in.";
@@ -808,10 +839,31 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           return { error: error instanceof Error ? error.message : "Could not send the reset link." };
         }
       },
+      requestPasswordCode: async (phone) => {
+        if (!remote.current) return { error: "The studio API is not running." };
+        try {
+          const result = await request<{ ok: true; previewCode?: string }>("/customers/forgot-password", {
+            method: "POST",
+            body: JSON.stringify({ phone }),
+          });
+          return { error: null, previewCode: result.previewCode };
+        } catch (error) {
+          return { error: error instanceof Error ? error.message : "Could not send the code." };
+        }
+      },
       resetPassword: async (token, password) => {
         if (!remote.current) return "The studio API is not running.";
         try {
           await request("/customers/reset-password", { method: "POST", body: JSON.stringify({ token, password }) });
+          return null;
+        } catch (error) {
+          return error instanceof Error ? error.message : "Could not reset the password.";
+        }
+      },
+      resetPasswordWithCode: async (phone, code, password) => {
+        if (!remote.current) return "The studio API is not running.";
+        try {
+          await request("/customers/reset-password", { method: "POST", body: JSON.stringify({ phone, code, password }) });
           return null;
         } catch (error) {
           return error instanceof Error ? error.message : "Could not reset the password.";
@@ -874,7 +926,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
                 items: state.cart.map((item) => ({ slug: item.slug, color: item.color, size: item.size, quantity: item.quantity })),
               }),
             });
-            const saved = { ...order, gift: input.gift, updates: input.updates };
+            const saved = { ...order, gift: input.gift };
             rememberGuestOrder(saved.id);
             setState((current) => {
               queueBag([], current.wishlist);
@@ -929,7 +981,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           timeline: [{ status: "Confirmed", date: new Date().toISOString() }],
           trackingUrl: "https://www.shiprocket.in/",
           gift: input.gift,
-          updates: input.updates,
         };
         setState((current) => ({
           ...current,

@@ -41,7 +41,6 @@ export default function CheckoutPage() {
   const [giftWrap, setGiftWrap] = useState(false);
   const [giftMessage, setGiftMessage] = useState("");
   const [hidePrices, setHidePrices] = useState(false);
-  const [updates, setUpdates] = useState<"sms" | "whatsapp">("sms");
   const [paying, setPaying] = useState(false);
   const [gateway, setGateway] = useState(false);
 
@@ -146,7 +145,6 @@ export default function CheckoutPage() {
       address,
       delivery,
       payment,
-      updates,
       gift: giftWrap || giftMessage.trim() || hidePrices ? { wrap: giftWrap, message: giftMessage.trim(), hidePrices } : undefined,
     };
     setPaying(true);
@@ -231,6 +229,9 @@ export default function CheckoutPage() {
           <div className="mt-3 grid gap-3 sm:grid-cols-2">
             <Field label="Full name" value={form.name} onChange={(value) => setField("name", value)} />
             <Field label="Mobile" value={form.phone} onChange={(value) => setField("phone", value.replace(/\D/g, "").slice(0, 10))} />
+            <p className="text-sm leading-6 text-muted sm:col-span-2">
+              We'll WhatsApp this number about the order: when it is confirmed, packed, shipped, out for delivery, and delivered, and if you cancel or return. The receipt still goes to the email above. Placing the order agrees to those messages.
+            </p>
             <Field label="Address" value={form.line1} onChange={(value) => setField("line1", value)} className="sm:col-span-2" />
             <Field label="Area" value={form.line2} onChange={(value) => setField("line2", value)} />
             <Field label="City" value={form.city} onChange={(value) => setField("city", value)} />
@@ -257,22 +258,6 @@ export default function CheckoutPage() {
               {pinNote}
             </p>
           )}
-          <fieldset className="mt-4">
-            <legend className="text-sm">Order updates</legend>
-            <p className="mt-1 text-sm text-muted">A short message when it ships, and when it is out for delivery. Only about this order.</p>
-            <div className="mt-2 flex gap-2">
-              {(["sms", "whatsapp"] as const).map((option) => (
-                <button
-                  type="button"
-                  key={option}
-                  onClick={() => setUpdates(option)}
-                  className={`h-11 border px-4 text-sm ${updates === option ? "border-ink bg-paper" : "border-line"}`}
-                >
-                  {option === "sms" ? "SMS" : "WhatsApp"}
-                </button>
-              ))}
-            </div>
-          </fieldset>
         </Fold>
 
         <Fold title="Delivery" open={sections.delivery} onToggle={() => toggleSection("delivery")}>

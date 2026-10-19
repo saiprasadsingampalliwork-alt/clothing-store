@@ -8,13 +8,23 @@ import { siteContent } from "@/lib/site";
 import { useStore } from "@/lib/store";
 
 export default function SignInPage() {
-  const { signIn, settings } = useStore();
+  const { signIn, requestSignInCode, signInWithCode, settings } = useStore();
   const loginImage = siteContent(settings).loginImage;
   const router = useRouter();
-  const [email, setEmail] = useState("aisha@earthen.in");
+  const [channel, setChannel] = useState<"email" | "whatsapp">("email");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [phone, setPhone] = useState("");
+  const [code, setCode] = useState("");
+  const [previewCode, setPreviewCode] = useState<string | null>(null);
+  const [codeSent, setCodeSent] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
+
+  function enter() {
+    setDone(true);
+    window.setTimeout(() => router.push("/account"), 900);
+  }
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -25,8 +35,40 @@ export default function SignInPage() {
       setError(message);
       return;
     }
-    setDone(true);
-    window.setTimeout(() => router.push("/account"), 900);
+    enter();
+  }
+
+  async function sendCode(event: FormEvent) {
+    event.preventDefault();
+    if (done) return;
+    setError(null);
+    if (!/^\d{10}$/.test(phone)) {
+      setError("Enter a 10-digit mobile number.");
+      return;
+    }
+    const result = await requestSignInCode(phone);
+    if (result.error) {
+      setError(result.error);
+      return;
+    }
+    setPreviewCode(result.previewCode ?? null);
+    setCodeSent(true);
+  }
+
+  async function submitCode(event: FormEvent) {
+    event.preventDefault();
+    if (done) return;
+    if (!/^\d{6}$/.test(code)) {
+      setError("Enter the 6-digit code.");
+      return;
+    }
+    setError(null);
+    const message = await signInWithCode(phone, code);
+    if (message) {
+      setError(message);
+      return;
+    }
+    enter();
   }
 
   function replayEntrance() {
@@ -40,22 +82,70 @@ export default function SignInPage() {
   return (
     <div className="login-screen grid min-h-[calc(100svh-var(--header-h))] md:grid-cols-2">
       <section className="login-panel relative flex items-center justify-center px-5 py-12 md:px-8">
-        <form onSubmit={submit} className="grid w-full max-w-sm gap-4">
+        <div className="grid w-full max-w-sm gap-4">
           <h1 className="serif settle text-4xl [--i:2]">Welcome back</h1>
-          <p className="settle text-sm text-muted [--i:3]">Sign in to track orders and check out faster.</p>
-          <div className="settle [--i:4]">
-            <Input label="Email" type="email" value={email} onChange={setEmail} />
+          <p className="settle text-sm text-muted [--i:3]">Sign in with email, or with a WhatsApp code to the mobile on your account.</p>
+          <div className="settle flex gap-2 [--i:4]">
+            {(["email", "whatsapp"] as const).map((option) => (
+              <button
+                type="button"
+                key={option}
+                onClick={() => {
+                  setChannel(option);
+                  setError(null);
+                  setCodeSent(false);
+                }}
+                className={`h-11 border px-4 text-sm ${channel === option ? "border-ink bg-paper" : "border-line"}`}
+              >
+                {option === "email" ? "Email" : "WhatsApp"}
+              </button>
+            ))}
           </div>
-          <div className="settle [--i:5]">
-            <Input label="Password" type="password" value={password} onChange={setPassword} />
-          </div>
-          {error && <p className="text-sm">{error}</p>}
-          <button className={`motion-btn settle relative h-12 w-full bg-terra text-sm tracking-[0.16em] text-cream [--i:6] ${done ? "done" : ""}`}>
-            <span className="lbl">SIGN IN</span>
-            <span className="tick" aria-hidden="true">
-              ✓
-            </span>
-          </button>
+          {channel === "email" ? (
+            <form onSubmit={submit} className="grid gap-4">
+              <Input label="Email" type="email" value={email} onChange={setEmail} />
+              <Input label="Password" type="password" value={password} onChange={setPassword} />
+              {error && <p className="text-sm">{error}</p>}
+              <button className={`motion-btn relative h-12 w-full bg-terra text-sm tracking-[0.16em] text-cream ${done ? "done" : ""}`}>
+                <span className="lbl">SIGN IN</span>
+                <span className="tick" aria-hidden="true">
+                  ✓
+                </span>
+              </button>
+            </form>
+          ) : codeSent ? (
+            <form onSubmit={submitCode} className="grid gap-4">
+              <p className="text-sm">A WhatsApp code is on its way to this mobile.</p>
+              {previewCode && <p className="text-sm">WhatsApp is not configured yet, so the code is shown here: {previewCode}</p>}
+              <Input label="Code" value={code} onChange={(value) => setCode(value.replace(/\D/g, "").slice(0, 6))} />
+              {error && <p className="text-sm">{error}</p>}
+              <button className={`motion-btn relative h-12 w-full bg-terra text-sm tracking-[0.16em] text-cream ${done ? "done" : ""}`}>
+                <span className="lbl">SIGN IN</span>
+                <span className="tick" aria-hidden="true">
+                  ✓
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setCodeSent(false);
+                  setCode("");
+                  setError(null);
+                }}
+                className="text-sm underline"
+              >
+                Use a different number
+              </button>
+            </form>
+          ) : (
+            <form onSubmit={sendCode} className="grid gap-4">
+              <Input label="Mobile" value={phone} onChange={(value) => setPhone(value.replace(/\D/g, "").slice(0, 10))} />
+              {error && <p className="text-sm">{error}</p>}
+              <button className="motion-btn relative h-12 w-full bg-terra text-sm tracking-[0.16em] text-cream">
+                <span className="lbl">SEND CODE</span>
+              </button>
+            </form>
+          )}
           <p className="settle text-center text-sm [--i:7]">
             <Link href="/reset-password" className="underline">
               Forgot password?
@@ -65,11 +155,11 @@ export default function SignInPage() {
               Create an account
             </Link>
           </p>
-          <p className="text-center text-sm text-muted">Aisha&apos;s account is aisha@earthen.in, password quietclothes.</p>
+          {/* <p className="text-center text-sm text-muted">Aisha&apos;s account is aisha@earthen.in, password quietclothes.</p> */}
           <button className="replay" type="button" onClick={replayEntrance}>
             Replay entrance
           </button>
-        </form>
+        </div>
       </section>
       <section className="relative flex min-h-72 items-end overflow-hidden md:min-h-0">
         <img

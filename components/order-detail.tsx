@@ -37,9 +37,7 @@ export function OrderDetail({ order, confirmation = false, celebrate = false }: 
         {order.number} · {new Date(order.createdAt).toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" })}
       </p>
       <p className="mt-4 text-sm leading-6">
-        A receipt will go to {order.email}.
-        {order.updates === "whatsapp" ? " We'll WhatsApp " : " We'll text "}
-        {order.phone} when it ships.
+        A receipt will go to {order.email}. We'll WhatsApp {order.phone} about this order, from confirmation through delivery, and if it is cancelled or returned.
         Status: <span className="text-ink">{order.status}</span>
       </p>
       <div className="mt-6 border border-line bg-paper p-4 text-sm leading-6">

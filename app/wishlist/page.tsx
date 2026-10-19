@@ -22,6 +22,9 @@ export default function WishlistPage() {
     <div className="mx-auto max-w-6xl px-4 py-8 md:px-6">
       <h1 className="serif text-4xl">Wishlist</h1>
       {!user && <p className="mt-2 text-sm text-muted">Saved on this browser. Sign in to keep it with your account.</p>}
+      {user && items.length > 0 && (
+        <p className="mt-2 text-sm text-muted">If these stay saved and you haven't ordered them, we'll WhatsApp the mobile on your account after an hour.</p>
+      )}
       {items.length === 0 ? (
         <div className="mt-8">
           <p>Nothing saved yet.</p>

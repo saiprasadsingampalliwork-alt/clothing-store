@@ -25,7 +25,7 @@ const faqs = [
   { q: "When will my order arrive?", a: "Standard delivery is 3–5 days. Express is 1–2 days, after the courier picks up." },
   { q: "Can I pay cash on delivery?", a: "Yes, on orders up to ₹10,000. A ₹40 fee is added at checkout before you place the order." },
   { q: "How do I return something?", a: "Open the order after it is delivered and choose return or exchange. You have 7 days. We arrange the pickup." },
-  { q: "Will you text me?", a: "Yes. At checkout you can choose SMS or WhatsApp. The messages are short, and only about that order." },
+  { q: "Will you text me?", a: "We'll WhatsApp the mobile on the order: confirmation, packing, shipping, delivery, and a cancel or return. If you're signed in and leave pieces in your bag or wishlist, we'll WhatsApp the mobile on your account after an hour. The receipt still goes to email." },
   { q: "How should it fit?", a: "Each piece says whether it fits true to size, and the size guide is in centimetres. Reviews include the height and size the person wore." },
   { q: "Do prices include GST?", a: "Yes. The invoice splits CGST and SGST for Karnataka, and IGST for other states." },
 ];

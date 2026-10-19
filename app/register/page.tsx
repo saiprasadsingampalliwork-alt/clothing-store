@@ -30,7 +30,7 @@ export default function RegisterPage() {
   }
 
   return (
-    <AuthShell title="Create account" text="Email or mobile, and a password. OTP sign-in comes later.">
+    <AuthShell title="Create account" text="Email, mobile, and a password. You can sign in later with that mobile on WhatsApp.">
       <form onSubmit={submit} className="space-y-3">
         <Input label="Name" value={name} onChange={setName} />
         <Input label="Email" type="email" value={email} onChange={setEmail} />

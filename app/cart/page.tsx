@@ -22,6 +22,9 @@ export default function CartPage() {
     <div className="mx-auto max-w-3xl px-4 py-8 md:px-6">
       <h1 className="serif text-4xl">Your bag</h1>
       <p className="mt-1 text-sm text-muted">{count} {count === 1 ? "item" : "items"}</p>
+      {store.user && count > 0 && (
+        <p className="mt-2 text-sm text-muted">If these are still in your bag in an hour, we'll WhatsApp the mobile on your account.</p>
+      )}
 
       {store.cart.length === 0 ? (
         <div className="mt-10">

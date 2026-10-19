@@ -7,7 +7,7 @@ import { useStore } from "@/lib/store";
 export default function AdminLoginPage() {
   const { staffSignIn, staff } = useStore();
   const router = useRouter();
-  const [email, setEmail] = useState("owner@earthen.in");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
 
@@ -38,7 +38,7 @@ export default function AdminLoginPage() {
         {error && <p className="mt-3 text-sm text-terra">{error}</p>}
         {staff && <p className="mt-3 text-sm">Signed in as {staff.name}.</p>}
         <button className="mt-5 h-12 w-full bg-ink text-xs tracking-[0.16em] text-cream">SIGN IN</button>
-        <p className="mt-4 text-xs text-muted">Owner: owner@earthen.in / studio. Catalog and orders staff use the same password.</p>
+        {/* <p className="mt-4 text-xs text-muted">Owner: owner@earthen.in / studio. Catalog and orders staff use the same password.</p> */}
       </form>
     </div>
   );
