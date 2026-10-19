@@ -6,13 +6,13 @@ import { useStore } from "@/lib/store";
 
 export function RecentShelf({ plain = false }: { plain?: boolean }) {
   const { recent } = useStore();
-  const items = recent.map((slug) => getProduct(slug)).filter((product) => product != null).slice(0, 3);
+  const items = recent.map((slug) => getProduct(slug)).filter((product) => product != null).slice(0, 4);
   if (items.length === 0) return null;
 
   const grid = (
-    <div className={`grid grid-cols-1 gap-x-8 gap-y-12 sm:grid-cols-2 ${plain ? "" : "lg:grid-cols-3"}`}>
+    <div className="grid grid-cols-1 gap-x-6 gap-y-12 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
       {items.map((product) => (
-        <ProductCard key={product.slug} product={product} />
+        <ProductCard key={product.slug} product={product} transitionName={plain ? undefined : `recent-${product.slug}`} />
       ))}
     </div>
   );

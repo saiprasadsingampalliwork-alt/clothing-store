@@ -82,7 +82,40 @@ export default function ReturnsPage() {
           );
         })}
       </div>
-      <div className="mt-4 overflow-auto border border-[#e6dfd4] bg-white">
+      <div className="mt-4 border border-[#e6dfd4] bg-white">
+        <ul className="divide-y divide-[#efeae2] md:hidden">
+          {rows.map((order) => {
+            const item = order.items[0];
+            const waitingRow = order.returnRequest?.status === "Awaiting review";
+            return (
+              <li key={order.id} className="px-4 py-4 text-sm">
+                <span className="flex items-center justify-between gap-3">
+                  <Link href={`/admin/orders/${order.id}`} className="text-[#2a2925]">{orderCode(order.number)}</Link>
+                  <StatusPill status={order.returnRequest?.status ?? ""} />
+                </span>
+                <p className="mt-1 text-[#6d6960]">{order.address.name}</p>
+                <p className="mt-1 text-[#6d6960]">
+                  {item?.name} · {order.returnRequest?.reason}
+                </p>
+                {waitingRow ? (
+                  <span className="mt-2 flex gap-4">
+                    <button className="text-[#ab6446]" onClick={() => void decideReturn(order.id, "Approved")}>
+                      Approve
+                    </button>
+                    <button className="text-[#6d6960]" onClick={() => void decideReturn(order.id, "Rejected")}>
+                      Reject
+                    </button>
+                  </span>
+                ) : (
+                  <Link href={`/admin/orders/${order.id}`} className="mt-2 inline-block text-[#ab6446]">
+                    Open →
+                  </Link>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+        <div className="hidden overflow-auto md:block">
         <table className="w-full min-w-[760px] text-left text-sm">
           <thead className="text-[11px] tracking-[0.14em] text-[#8a847c]">
             <tr className="border-b border-[#e6dfd4]">
@@ -141,6 +174,7 @@ export default function ReturnsPage() {
             })}
           </tbody>
         </table>
+        </div>
         {rows.length === 0 && <p className="px-5 py-6 text-sm text-[#6d6960]">No returns in this view.</p>}
       </div>
     </div>

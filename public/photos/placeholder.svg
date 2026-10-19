@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 1000" role="img">
+  <rect width="800" height="1000" fill="#f3eee6"/>
+  <g fill="none" stroke="#1c1a17" stroke-opacity="0.35" stroke-width="2">
+    <path d="M318 250c8-36 48-58 82-48 34-10 74 12 82 48l28 70-36 14-6 210H332l-6-210-36-14z"/>
+    <path d="M400 214v330"/>
+  </g>
+  <text x="400" y="820" text-anchor="middle" fill="#8a847c" font-family="Georgia, serif" font-size="28">Photo to come</text>
+</svg>

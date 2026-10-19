@@ -3,13 +3,15 @@
 import Link from "next/link";
 import { FormEvent, useState } from "react";
 import { brand } from "@/lib/brand";
+import { shopEntrances } from "@/lib/catalog";
+import { phoneHref, siteContent } from "@/lib/site";
+import { Icon } from "@/components/icons";
 import { useStore } from "@/lib/store";
 
-const shop = [
-  { href: "/shop?category=new", label: "New in" },
-  { href: "/shop?category=tops", label: "Tops" },
-  { href: "/shop?category=bottoms", label: "Bottoms" },
-  { href: "/shop?category=outerwear", label: "Outerwear" },
+const audiences = [
+  { href: "/shop?gender=women", label: "Women" },
+  { href: "/shop?gender=men", label: "Men" },
+  { href: "/shop?gender=unisex", label: "Unisex" },
 ];
 
 const help = [
@@ -26,7 +28,9 @@ const company = [
 ];
 
 export function Footer() {
-  const { recent } = useStore();
+  const { recent, settings } = useStore();
+  const studio = siteContent(settings);
+  const shop = [...shopEntrances().map((category) => ({ href: `/shop?category=${category.slug}`, label: category.label })), ...audiences];
   const [email, setEmail] = useState("");
   const [joined, setJoined] = useState(false);
   const showList = recent.length > 0;
@@ -77,19 +81,21 @@ export function Footer() {
             <FooterGroup title="Company" links={company} />
           </div>
           <p className="mt-10 text-xs leading-5 text-cream/60">
-            {brand.legalName}
+            {studio.legalName}
             <span className="mx-2">·</span>
-            {brand.address}
+            {studio.address}
           </p>
           <p className="mt-1 text-xs leading-5 text-cream/60">
-            GSTIN {brand.gstin}
+            GSTIN {settings.gstin || brand.gstin}
             <span className="mx-2">·</span>
-            <a href={brand.phoneHref} className="underline-offset-2 hover:text-cream">
-              {brand.phone}
+            <a href={phoneHref(studio.phone)} className="inline-flex items-center gap-1 underline-offset-2 hover:text-cream">
+              <Icon name="phone" className="h-3.5 w-3.5" />
+              {studio.phone}
             </a>
             <span className="mx-2">·</span>
-            <a href={`mailto:${brand.email}`} className="hover:text-cream">
-              {brand.email}
+            <a href={`mailto:${studio.email}`} className="inline-flex items-center gap-1 hover:text-cream">
+              <Icon name="mail" className="h-3.5 w-3.5" />
+              {studio.email}
             </a>
           </p>
           <p className="mt-3 text-xs tracking-[0.14em] text-cream/50">UPI · VISA · MASTERCARD · RUPAY</p>

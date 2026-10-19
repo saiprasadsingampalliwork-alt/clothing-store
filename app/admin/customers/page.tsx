@@ -68,7 +68,43 @@ export default function CustomersPage() {
           Repeat buyers
         </FilterChip>
       </div>
-      <div className="mt-4 overflow-auto border border-[#e6dfd4] bg-white">
+      <div className="mt-4 border border-[#e6dfd4] bg-white">
+        <ul className="divide-y divide-[#efeae2] md:hidden">
+          {rows.map((row) => {
+            const blocked = blockedEmails.some((email) => email.toLowerCase() === row.email.toLowerCase());
+            const history = orders.filter((order) => order.email.toLowerCase() === row.email.toLowerCase());
+            return (
+              <li key={row.email} className="px-4 py-4 text-sm">
+                <span className="flex items-center justify-between gap-3">
+                  <span>{row.name}</span>
+                  <StatusPill status={blocked ? "Blocked" : "Active"} />
+                </span>
+                <p className="mt-1 text-[#6d6960]">{row.email}</p>
+                <p className="mt-1 text-[#6d6960]">
+                  {row.count} {row.count === 1 ? "order" : "orders"} · {formatINR(row.spent)}
+                </p>
+                <button className="mt-2 text-[#ab6446]" onClick={() => setOpen(open === row.email ? null : row.email)}>
+                  {open === row.email ? "Hide" : "View →"}
+                </button>
+                {open === row.email && (
+                  <ul className="mt-2 space-y-1 text-[#6d6960]">
+                    {history.map((order) => (
+                      <li key={order.id}>
+                        <Link href={`/admin/orders/${order.id}`}>{orderCode(order.number)}</Link> · {order.status}
+                      </li>
+                    ))}
+                    <li>
+                      <button className="text-[#ab6446]" onClick={() => void setBlocked(row.email, !blocked)}>
+                        {blocked ? "Unblock" : "Block"}
+                      </button>
+                    </li>
+                  </ul>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+        <div className="hidden overflow-auto md:block">
         <table className="w-full min-w-[760px] text-left text-sm">
           <thead className="text-[11px] tracking-[0.14em] text-[#8a847c]">
             <tr className="border-b border-[#e6dfd4]">
@@ -121,6 +157,7 @@ export default function CustomersPage() {
             })}
           </tbody>
         </table>
+        </div>
         <Showing shown={rows.length} total={everyone} noun="customers" />
       </div>
     </div>

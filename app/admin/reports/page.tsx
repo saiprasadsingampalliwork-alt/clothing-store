@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { api as request } from "@/lib/api";
 import { compactINR, downloadCsv, gstSplit } from "@/lib/admin";
 import { formatINR } from "@/lib/money";
 import { useStore } from "@/lib/store";
@@ -8,10 +9,39 @@ import { AdminHeader, FilterChip, OutlineButton } from "@/components/admin-shell
 
 const tabs = ["Sales", "GST", "Payments"] as const;
 
+type Report = {
+  net: number;
+  orders: number;
+  avg: number;
+  gst: number;
+  refunds: number;
+  change: number;
+  hasPrior: boolean;
+  byCategory: { label: string; total: number; share: number }[];
+  byPayment: { label: string; total: number; share: number }[];
+  months: { key: string; label: string; orders: number; taxable: number; cgst: number; sgst: number; igst: number }[];
+};
+
 export default function ReportsPage() {
-  const { orders } = useStore();
+  const { orders, staff, ready } = useStore();
   const [tab, setTab] = useState<(typeof tabs)[number]>("Sales");
   const [recent, setRecent] = useState(false);
+  const [report, setReport] = useState<Report | null>(null);
+
+  useEffect(() => {
+    if (!ready || !staff) return;
+    let cancelled = false;
+    request<Report>(`/reports?range=${recent ? "30" : "all"}`)
+      .then((data) => {
+        if (!cancelled) setReport(data);
+      })
+      .catch(() => {
+        if (!cancelled) setReport(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [ready, staff, recent]);
   const now = Date.now();
   const windowed = orders.filter((order) => {
     if (!recent) return true;
@@ -69,6 +99,20 @@ export default function ReportsPage() {
   const categoryTotal = [...byCategory.values()].reduce((sum, value) => sum + value, 0) || 1;
   const paymentTotal = [...byPayment.values()].reduce((sum, value) => sum + value, 0) || 1;
   const change = priorNet ? Math.round(((net - priorNet) / priorNet) * 100) : 0;
+  const view: Report = report ?? {
+    net,
+    orders: live.length,
+    avg: live.length ? Math.round(net / live.length) : 0,
+    gst: cgst + sgst + igst,
+    refunds,
+    change,
+    hasPrior: Boolean(priorNet),
+    byCategory: [...byCategory.entries()].map(([label, total]) => ({ label, total, share: Math.round((total / categoryTotal) * 100) })),
+    byPayment: [...byPayment.entries()].map(([label, total]) => ({ label, total, share: Math.round((total / paymentTotal) * 100) })),
+    months: [...months.entries()]
+      .sort((a, b) => (a[0] < b[0] ? 1 : -1))
+      .map(([key, row]) => ({ key, ...row })),
+  };
 
   function exportReport() {
     downloadCsv("earthen-gst.csv", [
@@ -104,20 +148,20 @@ export default function ReportsPage() {
       {(tab === "Sales" || recent) && (
         <>
           <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <Stat label="Net sales" value={compactINR(net)} hint={priorNet ? `${change >= 0 ? "+" : ""}${change}% vs previous 30 days` : "This period"} />
-            <Stat label="Orders" value={String(live.length)} hint={`Avg. order ${formatINR(live.length ? Math.round(net / live.length) : 0)}`} />
-            <Stat label="GST collected" value={formatINR(cgst + sgst + igst)} hint="Included in sales" />
-            <Stat label="Refunds" value={formatINR(refunds)} hint={net ? `${Math.round((refunds / net) * 1000) / 10}% of sales` : "0% of sales"} />
+            <Stat label="Net sales" value={compactINR(view.net)} hint={view.hasPrior ? `${view.change >= 0 ? "+" : ""}${view.change}% vs previous 30 days` : "This period"} />
+            <Stat label="Orders" value={String(view.orders)} hint={`Avg. order ${formatINR(view.avg)}`} />
+            <Stat label="GST collected" value={formatINR(view.gst)} hint="Included in sales" />
+            <Stat label="Refunds" value={formatINR(view.refunds)} hint={view.net ? `${Math.round((view.refunds / view.net) * 1000) / 10}% of sales` : "0% of sales"} />
           </div>
           <div className="mt-4 grid gap-3 lg:grid-cols-2">
-            <BarCard title="Sales by category" rows={[...byCategory.entries()].map(([label, total]) => ({ label, total, share: Math.round((total / categoryTotal) * 100) }))} />
-            {(tab === "Sales" || recent) && <BarCard title="Payment methods" rows={[...byPayment.entries()].map(([label, total]) => ({ label, total, share: Math.round((total / paymentTotal) * 100) }))} />}
+            <BarCard title="Sales by category" rows={view.byCategory} />
+            {(tab === "Sales" || recent) && <BarCard title="Payment methods" rows={view.byPayment} />}
           </div>
         </>
       )}
       {tab === "Payments" && !recent && (
         <div className="mt-4">
-          <BarCard title="Payment methods" rows={[...byPayment.entries()].map(([label, total]) => ({ label, total, share: Math.round((total / paymentTotal) * 100) }))} />
+          <BarCard title="Payment methods" rows={view.byPayment} />
         </div>
       )}
       {(tab === "GST" || tab === "Sales" || recent) && (
@@ -128,7 +172,24 @@ export default function ReportsPage() {
               Download →
             </button>
           </div>
-          <table className="w-full text-left text-sm">
+          <ul className="divide-y divide-[#efeae2] border-t border-[#e6dfd4] md:hidden">
+            {view.months.map((row) => {
+              const total = row.cgst + row.sgst + row.igst;
+              return (
+                <li key={row.key} className="px-4 py-4 text-sm sm:px-5">
+                  <p>{row.label}</p>
+                  <p className="mt-1 text-[#6d6960]">
+                    {row.orders} {row.orders === 1 ? "order" : "orders"} · {formatINR(row.taxable)} taxable · {formatINR(total)} GST
+                  </p>
+                  <p className="mt-1 text-[#6d6960]">
+                    CGST {formatINR(row.cgst)} · SGST {formatINR(row.sgst)} · IGST {formatINR(row.igst)}
+                  </p>
+                </li>
+              );
+            })}
+          </ul>
+          <div className="hidden overflow-auto md:block">
+          <table className="w-full min-w-[720px] text-left text-sm">
             <thead className="text-[11px] tracking-[0.14em] text-[#8a847c]">
               <tr className="border-y border-[#e6dfd4]">
                 <th className="px-5 py-3 font-medium">MONTH</th>
@@ -141,10 +202,8 @@ export default function ReportsPage() {
               </tr>
             </thead>
             <tbody>
-              {[...months.entries()]
-                .sort((a, b) => (a[0] < b[0] ? 1 : -1))
-                .map(([key, row]) => (
-                  <tr key={key} className="border-b border-[#efeae2]">
+              {view.months.map((row) => (
+                  <tr key={row.key} className="border-b border-[#efeae2]">
                     <td className="px-5 py-3">{row.label}</td>
                     <td>{row.orders}</td>
                     <td>{formatINR(row.taxable)}</td>
@@ -153,9 +212,10 @@ export default function ReportsPage() {
                     <td>{formatINR(row.igst)}</td>
                     <td className="px-5 py-3">{formatINR(row.cgst + row.sgst + row.igst)}</td>
                   </tr>
-                ))}
+              ))}
             </tbody>
           </table>
+          </div>
         </section>
       )}
     </div>

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { CouponOffers } from "@/components/coupon-offers";
 import { getProduct } from "@/lib/catalog";
 import { Swatch } from "@/components/product-card";
 import { RollingPrice } from "@/components/rolling-price";
@@ -10,8 +10,6 @@ import { useStore } from "@/lib/store";
 
 export default function CartPage() {
   const store = useStore();
-  const [code, setCode] = useState("");
-  const [message, setMessage] = useState<string | null>(null);
   const { subtotal, discount, count } = store.totals;
   const after = Math.max(0, subtotal - discount);
   const freeShip = store.coupons.find((entry) => entry.code === store.coupon)?.type === "free_shipping";
@@ -46,7 +44,7 @@ export default function CartPage() {
                     {item.color} · Size {item.size}
                   </p>
                   <p className="mt-1 text-sm">
-                    <RollingPrice value={item.price * item.quantity} />
+                    <RollingPrice value={store.priceOf(item.slug, item.price) * item.quantity} />
                   </p>
                   <div className="mt-3 flex h-10 w-28 items-center border border-line">
                     <button className="h-full flex-1" onClick={() => store.updateQty(item.slug, item.color, item.size, item.quantity - 1)} aria-label="Decrease">
@@ -65,33 +63,9 @@ export default function CartPage() {
             ))}
           </ul>
 
-          <form
-            className="mt-6"
-            onSubmit={(event) => {
-              event.preventDefault();
-              const error = store.applyCoupon(code);
-              setMessage(error ?? `${code.toUpperCase()} applied.`);
-            }}
-          >
-            <label htmlFor="coupon" className="text-sm">
-              Coupon
-            </label>
-            <div className="mt-2 flex gap-2">
-            <input
-              id="coupon"
-              value={code}
-              onChange={(event) => setCode(event.target.value)}
-              className="h-11 flex-1 border border-line bg-paper px-3 outline-none"
-            />
-            <button className="h-11 border border-ink px-4 text-xs tracking-[0.14em]">APPLY</button>
-            </div>
-          </form>
-          {message && (
-            <p key={message} className="note-in mt-2 text-sm">
-              {message}
-            </p>
-          )}
-          <p className="mt-2 text-xs text-muted">If you have a code, such as WELCOME10, it applies to this order.</p>
+          <div className="mt-6">
+            <CouponOffers subtotal={subtotal} />
+          </div>
 
           <div className="mt-6 h-1 bg-line">
             <div className="ship-bar h-full bg-olive" style={{ transform: `scaleX(${ratio})` }} />

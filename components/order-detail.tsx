@@ -1,14 +1,22 @@
 "use client";
 
 import Link from "next/link";
+import { Icon, type IconName } from "@/components/icons";
 import { includedGst, formatINR } from "@/lib/money";
 import { brand } from "@/lib/brand";
+import { siteContent } from "@/lib/site";
 import { getProduct } from "@/lib/catalog";
 import { useStore, type Order } from "@/lib/store";
 
-const steps = ["Confirmed", "Packed", "Shipped", "Out for delivery", "Delivered"];
+const steps: { status: string; label: string; icon: IconName }[] = [
+  { status: "Confirmed", label: "Confirmed", icon: "check" },
+  { status: "Packed", label: "Packed", icon: "box" },
+  { status: "Shipped", label: "Shipped", icon: "truck" },
+  { status: "Out for delivery", label: "Out", icon: "pin" },
+  { status: "Delivered", label: "Delivered", icon: "home" },
+];
 
-export function OrderDetail({ order, confirmation = false }: { order: Order; confirmation?: boolean }) {
+export function OrderDetail({ order, confirmation = false, celebrate = false }: { order: Order; confirmation?: boolean; celebrate?: boolean }) {
   const { cancelOrder } = useStore();
   const canCancel = ["Confirmed", "Packed"].includes(order.status);
   const canReturn = order.status === "Delivered";
@@ -24,7 +32,7 @@ export function OrderDetail({ order, confirmation = false }: { order: Order; con
           <p className="eyebrow mt-3 text-olive">Order placed</p>
         </div>
       )}
-      <h1 className="serif mt-2 text-4xl">{confirmation ? "Thank you" : `Order ${order.number}`}</h1>
+      <h1 className={`serif mt-2 text-4xl ${celebrate ? "thanks-in" : ""}`}>{confirmation ? "Thank you" : `Order ${order.number}`}</h1>
       <p className="mt-2 text-sm text-muted">
         {order.number} · {new Date(order.createdAt).toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" })}
       </p>
@@ -42,25 +50,42 @@ export function OrderDetail({ order, confirmation = false }: { order: Order; con
         <p className="mt-2 text-muted">Care for each piece is printed with the invoice.</p>
       </div>
 
-      <ol className="mt-8 space-y-3">
-        {steps.map((step) => {
-          const event = order.timeline.find((entry) => entry.status === step);
-          const done = Boolean(event);
+      <ol className="mt-8 grid grid-cols-5 gap-1">
+        {steps.map((step, index) => {
+          const event = order.timeline.find((entry) => entry.status === step.status);
+          const furthest = steps.reduce((found, item, itemIndex) => (order.timeline.some((entry) => entry.status === item.status) ? itemIndex : found), -1);
+          const done = index <= furthest;
           return (
-            <li key={step} className="flex gap-3 text-sm">
-              <span className={`mt-1 h-2.5 w-2.5 rounded-full ${done ? "bg-olive" : "bg-line"}`} />
-              <span>
-                <span className={done ? "" : "text-muted"}>{step}</span>
-                {event && (
-                  <span className="block text-muted">
-                    {new Date(event.date).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}
-                  </span>
+            <li key={step.status} className="text-center">
+              <div className="relative flex justify-center">
+                {index > 0 && (
+                  <span
+                    className={`absolute right-1/2 top-4 h-px w-full ${done ? "bg-olive" : "bg-line"} ${celebrate && done ? "step-line" : ""}`}
+                    style={{ ["--i" as string]: index }}
+                  />
                 )}
-              </span>
+                <span
+                  className={`relative flex h-8 w-8 items-center justify-center rounded-full border ${done ? "border-olive bg-olive text-cream" : "border-line bg-cream text-muted"} ${celebrate && done ? "step-pop" : ""}`}
+                  style={{ ["--i" as string]: index }}
+                >
+                  <Icon name={step.icon} className="h-3.5 w-3.5" />
+                </span>
+              </div>
+              <p className={`mt-2 text-[11px] leading-tight ${done ? "" : "text-muted"}`} title={step.status}>
+                {step.label}
+              </p>
+              {event && (
+                <p className="mt-1 text-[10px] text-muted">
+                  {new Date(event.date).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}
+                </p>
+              )}
             </li>
           );
         })}
       </ol>
+      {["Cancelled", "Returned", "Return requested"].includes(order.status) && (
+        <p className="mt-3 text-sm text-muted">This order is {order.status.toLowerCase()}.</p>
+      )}
       {order.trackingUrl && order.status !== "Cancelled" && (
         <a href={order.trackingUrl} className="mt-4 inline-block text-sm underline" target="_blank" rel="noreferrer">
           Courier tracking
@@ -75,6 +100,11 @@ export function OrderDetail({ order, confirmation = false }: { order: Order; con
               <span className="block text-muted">
                 {item.color} · Size {item.size} · × {item.quantity}
               </span>
+              {["Delivered", "Return requested", "Returned"].includes(order.status) && (
+                <Link href={`/product/${item.slug}#reviews`} className="mt-1 inline-block underline">
+                  Review this piece
+                </Link>
+              )}
             </span>
             <span>{formatINR(item.price * item.quantity)}</span>
           </li>
@@ -125,6 +155,8 @@ export function OrderDetail({ order, confirmation = false }: { order: Order; con
 }
 
 export function Invoice({ order }: { order: Order }) {
+  const { settings } = useStore();
+  const studio = siteContent(settings);
   const lines = order.items.map((item) => {
     const gst = includedGst(item.price);
     return { ...item, ...gst, lineTax: gst.tax * item.quantity, lineTaxable: gst.taxable * item.quantity };
@@ -137,10 +169,10 @@ export function Invoice({ order }: { order: Order }) {
       <div className="flex items-start justify-between">
         <div>
           <p className="tracking-[0.28em]">EARTHEN</p>
-          <p className="mt-2 text-sm text-muted">{brand.legalName}</p>
-          <p className="text-sm text-muted">{brand.address}</p>
-          <p className="text-sm text-muted">GSTIN {brand.gstin}</p>
-          <p className="text-sm text-muted">{brand.phone}</p>
+          <p className="mt-2 text-sm text-muted">{studio.legalName}</p>
+          <p className="text-sm text-muted">{studio.address}</p>
+          <p className="text-sm text-muted">GSTIN {settings.gstin || brand.gstin}</p>
+          <p className="text-sm text-muted">{studio.phone}</p>
         </div>
         <div className="text-right text-sm">
           <p>Tax invoice</p>

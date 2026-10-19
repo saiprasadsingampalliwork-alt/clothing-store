@@ -10,8 +10,10 @@ import {
   type ReactNode,
 } from "react";
 import { api as request, customerToken, setCustomerToken, setStaffToken, staffToken } from "./api";
-import { getProduct, liveProduct, unitsAvailable, type Product, type ProductOverride, type Size } from "./catalog";
-import { defaultCoupons, evaluateCoupon, shippingFee, type CouponRecord } from "./money";
+import { forgetCategory, getProduct, installCatalog, installCategories, liveProduct, rememberCategory, rememberProduct, toProduct, unitsAvailable, type ApiProduct, type Product, type ProductOverride, type ShopCategory, type Size } from "./catalog";
+import { defaultCoupons, evaluateCoupon, formatINR, shippingFee, type CouponRecord } from "./money";
+import { applyStoreSale } from "./sale";
+import type { SiteContent } from "./site";
 
 export type CartItem = {
   slug: string;
@@ -75,6 +77,8 @@ export type Order = {
   status: OrderStatus;
   timeline: { status: string; date: string }[];
   trackingUrl?: string;
+  razorpayOrderId?: string;
+  razorpayPaymentId?: string;
   notes?: string;
   gift?: { wrap: boolean; message: string; hidePrices: boolean };
   updates?: "sms" | "whatsapp";
@@ -114,7 +118,30 @@ export type StoreSettings = {
   businessName: string;
   gstin: string;
   pricesIncludeGst: boolean;
+  announcementEnabled: boolean;
+  announcementText: string;
+  announcementHref: string;
+  saleEnabled: boolean;
+  saleName: string;
+  salePercent: number;
+  saleStart: string;
+  saleEnd: string;
+  content?: SiteContent;
 };
+
+export function announcementCopy(settings: Pick<StoreSettings, "announcementText" | "freeShippingAt" | "returnWindowDays">) {
+  const custom = settings.announcementText?.trim();
+  if (custom) return custom.slice(0, 140);
+  const days = Math.max(0, Math.round(settings.returnWindowDays || 0));
+  return `Free shipping over ${formatINR(settings.freeShippingAt)} · ${days}-day returns`;
+}
+
+export function announcementLink(value: string | undefined) {
+  const href = (value ?? "").trim();
+  if (href.startsWith("/") && !href.startsWith("//")) return href.slice(0, 200);
+  if (/^https?:\/\//i.test(href)) return href.slice(0, 200);
+  return "";
+}
 
 export type Banner = {
   id: string;
@@ -355,6 +382,14 @@ const defaultSettings: StoreSettings = {
   businessName: "Earthen",
   gstin: "29AABCE1234F1Z5",
   pricesIncludeGst: true,
+  announcementEnabled: true,
+  announcementText: "",
+  announcementHref: "",
+  saleEnabled: false,
+  saleName: "",
+  salePercent: 0,
+  saleStart: "",
+  saleEnd: "",
 };
 
 const empty: Persisted = {
@@ -388,6 +423,7 @@ const empty: Persisted = {
 
 type Store = Persisted & {
   ready: boolean;
+  priceOf: (slug: string, fallback: number) => number;
   addToCart: (product: Product, color: string, size: string, quantity?: number) => string | null;
   updateQty: (slug: string, color: string, size: string, quantity: number) => void;
   removeFromCart: (slug: string, color: string, size: string) => void;
@@ -397,11 +433,12 @@ type Store = Persisted & {
   wished: (slug: string) => boolean;
   noteView: (slug: string) => void;
   setUsualSize: (size: Size) => void;
-  askRestock: (entry: { slug: string; color: string; size: string; contact: string }) => string | null;
+  askRestock: (entry: { slug: string; color: string; size: string; contact: string }) => Promise<string | null>;
   register: (input: { name: string; email: string; phone: string; password: string }) => Promise<string | null>;
   signIn: (email: string, password: string) => Promise<string | null>;
   signOut: () => void;
-  resetPassword: (email: string, password: string) => Promise<string | null>;
+  requestPasswordReset: (email: string) => Promise<{ error: string | null; previewUrl?: string }>;
+  resetPassword: (token: string, password: string) => Promise<string | null>;
   updateProfile: (patch: Partial<Pick<User, "name" | "phone">>) => Promise<void>;
   saveAddress: (address: Address) => Promise<void>;
   removeAddress: (id: string) => Promise<void>;
@@ -413,6 +450,7 @@ type Store = Persisted & {
     payment: Order["payment"];
     gift?: Order["gift"];
     updates?: Order["updates"];
+    razorpay?: { orderId: string; paymentId: string; signature: string };
   }) => Promise<Order | string>;
   cancelOrder: (id: string) => Promise<string | null>;
   requestReturn: (id: string, request: NonNullable<Order["returnRequest"]>) => Promise<string | null>;
@@ -423,12 +461,17 @@ type Store = Persisted & {
   createShipment: (id: string, shipment: { courier: string; tracking: string }) => Promise<string | null>;
   decideReturn: (id: string, decision: "Approved" | "Rejected") => Promise<string | null>;
   setBlocked: (email: string, blocked: boolean) => Promise<void>;
-  saveOverride: (slug: string, patch: ProductOverride) => Promise<void>;
+  saveOverride: (slug: string, patch: ProductOverride & { gender?: string; category?: string; name?: string; description?: string; fabric?: string; care?: string[]; colors?: { name: string; hex: string }[]; photos?: { id: string; label: string; src: string; alt: string }[] }) => Promise<void>;
+  saveCategory: (input: { slug?: string; label: string; blurb: string; image: string; chart: "upper" | "lower" }) => Promise<string | null>;
+  removeCategory: (slug: string) => Promise<string | null>;
   saveCoupon: (coupon: CouponRecord) => Promise<string | null>;
   removeCoupon: (code: string) => Promise<void>;
   saveBanner: (banner: Banner) => Promise<void>;
   removeBanner: (id: string) => Promise<void>;
   saveSettings: (settings: StoreSettings) => Promise<void>;
+  submitReview: (slug: string, input: { rating: number; text: string; fit: string; heightCm?: number }) => Promise<string | null>;
+  createProduct: (input: { name: string; price: number; category: string; gender: string; fabric: string; color: string; hex: string; silhouette: string }) => Promise<string | null>;
+  importProducts: (rows: Record<string, string>[]) => Promise<string | null>;
   totals: {
     subtotal: number;
     discount: number;
@@ -449,7 +492,31 @@ type RemoteState = {
   blockedEmails: string[];
   staffList: Staff[];
   user: (Omit<User, "password"> & { addresses?: Address[] }) | null;
+  products?: ApiProduct[];
+  categories?: ShopCategory[];
+  bag?: { cart: CartItem[]; wishlist: { slug: string; color: string }[] } | null;
 };
+
+let studioUp = false;
+let bagTimer: number | undefined;
+
+function queueBag(cart: CartItem[], wishlist: { slug: string; color: string }[]) {
+  if (!studioUp || !customerToken()) return;
+  window.clearTimeout(bagTimer);
+  bagTimer = window.setTimeout(() => {
+    void request("/customers/me/bag", { method: "PUT", body: JSON.stringify({ cart, wishlist }) }).catch(() => undefined);
+  }, 300);
+}
+
+function mergeCart(saved: CartItem[], local: CartItem[]) {
+  const keys = new Set(saved.map((item) => `${item.slug}|${item.color}|${item.size}`));
+  return [...saved, ...local.filter((item) => !keys.has(`${item.slug}|${item.color}|${item.size}`))];
+}
+
+function mergeWishlist(saved: { slug: string; color: string }[], local: { slug: string; color: string }[]) {
+  const keys = new Set(saved.map((item) => item.slug));
+  return [...saved, ...local.filter((item) => !keys.has(item.slug))];
+}
 
 async function withGuestOrders(data: RemoteState): Promise<RemoteState> {
   const known = new Set((data.orders ?? []).map((order) => order.id));
@@ -476,12 +543,15 @@ function applyRemote(current: Persisted, data: RemoteState): Persisted {
     blockedEmails: data.blockedEmails ?? [],
     staffList: data.staffList?.length ? data.staffList : current.staffList,
     user: data.user ? { ...data.user, password: "", addresses: data.user.addresses ?? [] } : current.user,
+    cart: data.bag ? mergeCart(data.bag.cart ?? [], current.cart) : current.cart,
+    wishlist: data.bag ? mergeWishlist(data.bag.wishlist ?? [], current.wishlist) : current.wishlist,
   };
 }
 
 export function StoreProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<Persisted>(empty);
   const [ready, setReady] = useState(false);
+  const [catalogTick, setCatalogTick] = useState(0);
   const remote = useRef(false);
 
   useEffect(() => {
@@ -495,9 +565,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     request<RemoteState>("/bootstrap")
       .then(async (data) => {
         remote.current = true;
+        studioUp = true;
+        installCatalog(data.products);
+        installCategories(data.categories);
         const withGuest = await withGuestOrders(data);
-        setState((current) =>
-          applyRemote(
+        setState((current) => {
+          const next = applyRemote(
             {
               ...current,
               cart: local.cart ?? [],
@@ -510,8 +583,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
               user: customerToken() ? local.user ?? null : null,
             },
             withGuest,
-          ),
-        );
+          );
+          if (data.bag && customerToken()) queueBag(next.cart, next.wishlist);
+          return next;
+        });
+        setCatalogTick((tick) => tick + 1);
       })
       .catch(() => {
         if (local.orders || local.accounts) {
@@ -544,7 +620,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [state, ready]);
 
   const api = useMemo<Store>(() => {
-    const subtotal = state.cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
+    const priceOf = (slug: string, fallback: number) => {
+      const product = getProduct(slug);
+      if (!product) return fallback;
+      const live = liveProduct(product, state.overrides[slug]);
+      return applyStoreSale(live.basePrice, live.price, state.settings);
+    };
+    const subtotal = state.cart.reduce((sum, item) => sum + priceOf(item.slug, item.price) * item.quantity, 0);
     const coupon = state.coupons.find((entry) => entry.code === state.coupon);
     const priced = coupon ? evaluateCoupon(coupon, subtotal) : undefined;
     const discount = priced && priced.ok && coupon?.type !== "free_shipping" ? priced.discount : 0;
@@ -552,13 +634,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     return {
       ...state,
       ready,
+      priceOf,
       totals: {
         subtotal,
         discount,
         count: state.cart.reduce((sum, item) => sum + item.quantity, 0),
       },
       addToCart: (product, color, size, quantity = 1) => {
-        const live = liveProduct(getProduct(product.slug) ?? product, state.overrides[product.slug]);
+        const listed = liveProduct(getProduct(product.slug) ?? product, state.overrides[product.slug]);
+        const live = { ...listed, price: applyStoreSale(listed.basePrice, listed.price, state.settings) };
         if (live.status !== "active") return "That piece is not for sale.";
         const available = unitsAvailable(live, color, size);
         if (available <= 0) return "That size is out of stock.";
@@ -583,32 +667,35 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           const cart = existing
             ? current.cart.map((entry) => (entry === existing ? item : entry))
             : [...current.cart, item];
+          queueBag(cart, current.wishlist);
           return { ...current, cart };
         });
         return message;
       },
       updateQty: (slug, color, size, quantity) => {
-        setState((current) => ({
-          ...current,
-          cart: current.cart.flatMap((item) => {
+        setState((current) => {
+          const cart = current.cart.flatMap((item) => {
             if (item.slug !== slug || item.color !== color || item.size !== size) return [item];
             if (quantity <= 0) return [];
             const product = getProduct(slug);
-            const available = product ? unitsAvailable(product, color, size) : quantity;
+            const available = product ? unitsAvailable(liveProduct(product, current.overrides[slug]), color, size) : quantity;
             return [{ ...item, quantity: Math.min(quantity, available) }];
-          }),
-        }));
+          });
+          queueBag(cart, current.wishlist);
+          return { ...current, cart };
+        });
       },
       removeFromCart: (slug, color, size) => {
-        setState((current) => ({
-          ...current,
-          cart: current.cart.filter((item) => !(item.slug === slug && item.color === color && item.size === size)),
-        }));
+        setState((current) => {
+          const cart = current.cart.filter((item) => !(item.slug === slug && item.color === color && item.size === size));
+          queueBag(cart, current.wishlist);
+          return { ...current, cart };
+        });
       },
       applyCoupon: (code) => {
         const coupon = state.coupons.find((entry) => entry.code === code.trim().toUpperCase());
         if (!coupon) return "That coupon is not valid.";
-        const sub = state.cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
+        const sub = state.cart.reduce((sum, item) => sum + priceOf(item.slug, item.price) * item.quantity, 0);
         const result = evaluateCoupon(coupon, sub);
         if (!result.ok) return result.reason;
         setState((current) => ({ ...current, coupon: coupon.code }));
@@ -618,12 +705,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       toggleWishlist: (slug, color) => {
         setState((current) => {
           const exists = current.wishlist.some((item) => item.slug === slug);
-          return {
-            ...current,
-            wishlist: exists
-              ? current.wishlist.filter((item) => item.slug !== slug)
-              : [...current.wishlist, { slug, color }],
-          };
+          const wishlist = exists ? current.wishlist.filter((item) => item.slug !== slug) : [...current.wishlist, { slug, color }];
+          queueBag(current.cart, wishlist);
+          return { ...current, wishlist };
         });
       },
       wished: (slug) => state.wishlist.some((item) => item.slug === slug),
@@ -634,7 +718,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         });
       },
       setUsualSize: (size) => setState((current) => ({ ...current, usualSize: size })),
-      askRestock: ({ slug, color, size, contact }) => {
+      askRestock: async ({ slug, color, size, contact }) => {
         const value = contact.trim();
         const email = value.includes("@") && value.includes(".");
         const mobile = /^\d{10}$/.test(value);
@@ -642,6 +726,17 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         const already = state.alerts.some((entry) => entry.slug === slug && entry.color === color && entry.size === size && entry.contact === value);
         if (!already) {
           setState((current) => ({ ...current, alerts: [...current.alerts, { slug, color, size, contact: value }] }));
+        }
+        if (remote.current && email) {
+          try {
+            const result = await request<{ message: string }>(`/catalog/${slug}/restock`, {
+              method: "POST",
+              body: JSON.stringify({ color, size, contact: value }),
+            });
+            return result.message;
+          } catch (error) {
+            return error instanceof Error ? error.message : "Could not save that restock note.";
+          }
         }
         return `We'll write to ${value} when ${color} in ${size} is back.`;
       },
@@ -687,7 +782,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           setCustomerToken(result.token);
           const user = { ...result.user, password, addresses: result.user.addresses ?? [] };
           const snapshot = await request<RemoteState>("/bootstrap");
-          setState((current) => applyRemote({ ...current, user }, snapshot));
+          setState((current) => {
+            const next = applyRemote({ ...current, user }, snapshot);
+            if (snapshot.bag) queueBag(next.cart, next.wishlist);
+            return next;
+          });
           return null;
         } catch (error) {
           return error instanceof Error ? error.message : "Could not sign in.";
@@ -697,20 +796,22 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         setCustomerToken(null);
         setState((current) => ({ ...current, user: null }));
       },
-      resetPassword: async (email, password) => {
-        if (!remote.current) {
-          const exists = state.accounts.some((account) => account.email.toLowerCase() === email.toLowerCase());
-          if (!exists) return "No account uses that email.";
-          setState((current) => ({
-            ...current,
-            accounts: current.accounts.map((account) =>
-              account.email.toLowerCase() === email.toLowerCase() ? { ...account, password } : account,
-            ),
-          }));
-          return null;
-        }
+      requestPasswordReset: async (email) => {
+        if (!remote.current) return { error: "The studio API is not running." };
         try {
-          await request("/customers/reset-password", { method: "POST", body: JSON.stringify({ email, password }) });
+          const result = await request<{ ok: true; previewUrl?: string }>("/customers/forgot-password", {
+            method: "POST",
+            body: JSON.stringify({ email }),
+          });
+          return { error: null, previewUrl: result.previewUrl };
+        } catch (error) {
+          return { error: error instanceof Error ? error.message : "Could not send the reset link." };
+        }
+      },
+      resetPassword: async (token, password) => {
+        if (!remote.current) return "The studio API is not running.";
+        try {
+          await request("/customers/reset-password", { method: "POST", body: JSON.stringify({ token, password }) });
           return null;
         } catch (error) {
           return error instanceof Error ? error.message : "Could not reset the password.";
@@ -775,7 +876,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             });
             const saved = { ...order, gift: input.gift, updates: input.updates };
             rememberGuestOrder(saved.id);
-            setState((current) => ({ ...current, orders: [saved, ...current.orders.filter((entry) => entry.id !== saved.id)], cart: [], coupon: null }));
+            setState((current) => {
+              queueBag([], current.wishlist);
+              return { ...current, orders: [saved, ...current.orders.filter((entry) => entry.id !== saved.id)], cart: [], coupon: null };
+            });
             return saved;
           } catch (error) {
             return error instanceof Error ? error.message : "Could not place the order.";
@@ -792,7 +896,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             return `${item.name} in ${item.color}, size ${item.size} is no longer available.`;
           }
         }
-        const sub = state.cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
+        const pricedItems = state.cart.map((item) => ({ ...item, price: priceOf(item.slug, item.price) }));
+        const sub = pricedItems.reduce((sum, item) => sum + item.price * item.quantity, 0);
         const applied = state.coupons.find((entry) => entry.code === state.coupon);
         const priced = applied ? evaluateCoupon(applied, sub) : undefined;
         if (applied && priced && !priced.ok) return priced.reason;
@@ -811,7 +916,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           email: input.email,
           phone: input.phone,
           address: input.address,
-          items: state.cart,
+          items: pricedItems,
           delivery: input.delivery,
           payment: input.payment,
           subtotal: sub,
@@ -1033,7 +1138,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       },
       saveOverride: async (slug, patch) => {
         if (remote.current) {
-          const saved = await request<{ override: ProductOverride }>(`/catalog/${slug}`, { method: "PATCH", body: JSON.stringify(patch) });
+          const saved = await request<{ product: ApiProduct; override: ProductOverride; category?: ShopCategory | null }>(`/catalog/${slug}`, { method: "PATCH", body: JSON.stringify(patch) });
+          if (saved.product) rememberProduct(toProduct(saved.product));
+          if (saved.category) rememberCategory(saved.category);
+          setCatalogTick((tick) => tick + 1);
           setState((current) => ({ ...current, overrides: { ...current.overrides, [slug]: saved.override } }));
           return;
         }
@@ -1096,6 +1204,30 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         if (remote.current) await request(`/banners/${id}`, { method: "DELETE" });
         setState((current) => ({ ...current, banners: current.banners.filter((entry) => entry.id !== id) }));
       },
+      saveCategory: async (input) => {
+        if (!remote.current) return "The studio API is not running.";
+        try {
+          const saved = input.slug
+            ? await request<ShopCategory>(`/categories/${input.slug}`, { method: "PATCH", body: JSON.stringify(input) })
+            : await request<ShopCategory>("/categories", { method: "POST", body: JSON.stringify(input) });
+          rememberCategory(saved);
+          setCatalogTick((tick) => tick + 1);
+          return null;
+        } catch (error) {
+          return error instanceof Error ? error.message : "Could not save the category.";
+        }
+      },
+      removeCategory: async (slug) => {
+        if (!remote.current) return "The studio API is not running.";
+        try {
+          await request(`/categories/${slug}`, { method: "DELETE" });
+          forgetCategory(slug);
+          setCatalogTick((tick) => tick + 1);
+          return null;
+        } catch (error) {
+          return error instanceof Error ? error.message : "Could not remove the category.";
+        }
+      },
       saveSettings: async (settings) => {
         if (remote.current) {
           const saved = await request<StoreSettings>("/settings", { method: "PUT", body: JSON.stringify(settings) });
@@ -1104,8 +1236,47 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         }
         setState((current) => ({ ...current, settings }));
       },
+      submitReview: async (slug, input) => {
+        if (!remote.current || !customerToken()) return "Sign in to review a piece you have received.";
+        try {
+          const saved = await request<{ product: ApiProduct }>(`/catalog/${slug}/reviews`, { method: "POST", body: JSON.stringify(input) });
+          rememberProduct(toProduct(saved.product));
+          setCatalogTick((tick) => tick + 1);
+          return null;
+        } catch (error) {
+          return error instanceof Error ? error.message : "Could not save the review.";
+        }
+      },
+      createProduct: async (input) => {
+        if (!remote.current) return "The studio API is not running.";
+        try {
+          const saved = await request<{ product: ApiProduct; override: ProductOverride; category?: ShopCategory | null }>("/catalog", { method: "POST", body: JSON.stringify(input) });
+          const product = toProduct(saved.product);
+          rememberProduct(product);
+          if (saved.category) rememberCategory(saved.category);
+          setState((current) => ({ ...current, overrides: { ...current.overrides, [product.slug]: saved.override } }));
+          setCatalogTick((tick) => tick + 1);
+          return null;
+        } catch (error) {
+          return error instanceof Error ? error.message : "Could not add the product.";
+        }
+      },
+      importProducts: async (rows) => {
+        if (!remote.current) return "The studio API is not running.";
+        try {
+          const result = await request<{ created: number; updated: number }>("/catalog/import", { method: "POST", body: JSON.stringify({ rows }) });
+          const snapshot = await request<RemoteState>("/bootstrap");
+          installCatalog(snapshot.products);
+          installCategories(snapshot.categories);
+          setState((current) => applyRemote(current, snapshot));
+          setCatalogTick((tick) => tick + 1);
+          return `Imported ${result.created} new and updated ${result.updated}.`;
+        } catch (error) {
+          return error instanceof Error ? error.message : "Could not import the file.";
+        }
+      },
     };
-  }, [state, ready]);
+  }, [state, ready, catalogTick]);
 
   return <StoreContext.Provider value={api}>{children}</StoreContext.Provider>;
 }

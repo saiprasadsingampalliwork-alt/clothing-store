@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
+import { Icon } from "@/components/icons";
 import { canAccess, orderCode, paymentLabel, shortDate } from "@/lib/admin";
 import { formatINR } from "@/lib/money";
 import { useStore, type StaffRole } from "@/lib/store";
@@ -10,6 +11,7 @@ import { useStore, type StaffRole } from "@/lib/store";
 const links = [
   { href: "/admin", label: "Dashboard" },
   { href: "/admin/products", label: "Products" },
+  { href: "/admin/categories", label: "Categories" },
   { href: "/admin/orders", label: "Orders" },
   { href: "/admin/returns", label: "Returns" },
   { href: "/admin/customers", label: "Customers" },
@@ -21,12 +23,24 @@ const links = [
 export function AdminShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { staff, ready } = useStore();
+  const { staff, ready, staffSignOut } = useStore();
+  const [menu, setMenu] = useState(false);
 
   useEffect(() => {
     if (!ready || pathname === "/admin/login" || staff) return;
     router.replace("/admin/login");
   }, [ready, staff, pathname, router]);
+
+  useEffect(() => {
+    setMenu(false);
+  }, [pathname]);
+
+  useEffect(() => {
+    document.body.style.overflow = menu ? "hidden" : "";
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, [menu]);
 
   if (!ready) return <div className="min-h-screen bg-[#fbf8f4]" />;
   if (pathname === "/admin/login") return <>{children}</>;
@@ -34,31 +48,77 @@ export function AdminShell({ children }: { children: ReactNode }) {
   if (!staff) return <div className="min-h-screen bg-[#fbf8f4]" />;
 
   const allowed = canAccess(staff.role, pathname);
+  const visible = links.filter((link) => canAccess(staff.role, link.href));
 
   return (
     <div className="min-h-screen bg-[#fbf8f4] md:grid md:grid-cols-[216px_1fr]">
-      <aside className="bg-[#2a2925] text-[#f3efe8] md:min-h-screen">
+      <aside className="hidden bg-[#2a2925] text-[#f3efe8] md:block md:min-h-screen">
         <div className="px-6 pb-4 pt-8">
           <p className="text-[13px] tracking-[0.28em]">EARTHEN</p>
           <p className="mt-1 text-[10px] tracking-[0.22em] text-[#f3efe8]/55">ADMIN</p>
         </div>
-        <nav className="flex gap-1 overflow-auto px-3 pb-6 md:block md:space-y-1">
-          {links
-            .filter((link) => canAccess(staff.role, link.href))
-            .map((link) => {
-              const active = link.href === "/admin" ? pathname === "/admin" : pathname.startsWith(link.href);
-              return (
+        <nav className="space-y-1 px-3 pb-6">
+          {visible.map((link) => {
+            const active = link.href === "/admin" ? pathname === "/admin" : pathname.startsWith(link.href);
+            return (
+              <Link
+                key={link.href}
+                href={link.href}
+                className={`block whitespace-nowrap rounded-sm px-3 py-2 text-[14px] ${active ? "bg-[#5b6043] text-[#fbf8f4]" : "text-[#e7e1d4]/90 hover:text-[#fbf8f4]"}`}
+              >
+                {link.label}
+              </Link>
+            );
+          })}
+        </nav>
+      </aside>
+      <header className="sticky top-0 z-30 border-b border-[#e6dfd4] bg-[#fbf8f4] md:hidden">
+        <div className="relative flex h-16 items-center px-4">
+          <button
+            type="button"
+            className="flex h-11 w-11 items-center justify-center"
+            aria-label="Open menu"
+            onClick={() => setMenu(true)}
+          >
+            <span className="flex w-5 flex-col gap-1.5">
+              <span className="h-px bg-[#2a2925]" />
+              <span className="h-px bg-[#2a2925]" />
+              <span className="h-px bg-[#2a2925]" />
+            </span>
+          </button>
+          <p className="absolute left-1/2 -translate-x-1/2 text-[15px] tracking-[0.32em] text-[#2a2925]">EARTHEN</p>
+          <button
+            type="button"
+            onClick={staffSignOut}
+            title="Sign out"
+            className="ml-auto grid h-9 w-9 shrink-0 place-items-center rounded-full bg-[#5b6043] text-sm text-[#fbf8f4]"
+          >
+            {staff.name.slice(0, 1)}
+          </button>
+        </div>
+        {menu && (
+          <div className="fixed inset-0 z-50 overflow-y-auto bg-[#f7f4ee]">
+            <div className="flex h-16 items-center justify-between border-b border-[#e4ddd2] px-4">
+              <span className="tracking-[0.32em] text-[#2a2925]">EARTHEN</span>
+              <button type="button" className="flex h-11 w-11 items-center justify-center" onClick={() => setMenu(false)} aria-label="Close menu">
+                <Icon name="close" />
+              </button>
+            </div>
+            <nav className="flex flex-col px-6 py-6 text-2xl serif">
+              {visible.map((link, index) => (
                 <Link
                   key={link.href}
                   href={link.href}
-                  className={`block whitespace-nowrap rounded-sm px-3 py-2 text-[14px] ${active ? "bg-[#5b6043] text-[#fbf8f4]" : "text-[#e7e1d4]/90 hover:text-[#fbf8f4]"}`}
+                  className="menu-link border-b border-[#e4ddd2] py-4 text-[#2a2925] last:border-0"
+                  style={{ ["--i" as string]: index }}
                 >
                   {link.label}
                 </Link>
-              );
-            })}
-        </nav>
-      </aside>
+              ))}
+            </nav>
+          </div>
+        )}
+      </header>
       <div className="min-w-0 px-5 py-6 md:px-10 md:py-8">
         {allowed ? children : (
           <>
@@ -74,16 +134,16 @@ export function AdminShell({ children }: { children: ReactNode }) {
 export function AdminHeader({ title, actions }: { title: string; actions?: ReactNode }) {
   const { staff, staffSignOut } = useStore();
   return (
-    <div className="flex items-center justify-between gap-4">
-      <h1 className="serif text-[32px] leading-none text-[#2a2925]">{title}</h1>
-      <div className="flex items-center gap-3">
+    <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+      <h1 className="serif text-[28px] leading-none text-[#2a2925] sm:text-[32px]">{title}</h1>
+      <div className="flex flex-wrap items-center gap-3">
         {actions}
         {staff && (
           <button
             type="button"
             onClick={staffSignOut}
             title="Sign out"
-            className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-[#5b6043] text-sm text-[#fbf8f4]"
+            className="hidden h-9 w-9 shrink-0 place-items-center rounded-full bg-[#5b6043] text-sm text-[#fbf8f4] md:grid"
           >
             {staff.name.slice(0, 1)}
           </button>
@@ -166,12 +226,46 @@ export function roleLabel(role: StaffRole) {
 export function OrdersTable({
   orders,
   showDate = false,
+  linked = true,
 }: {
   orders: { id: string; number: string; createdAt?: string; address: { name: string }; items: { quantity: number }[]; total: number; payment: string; status: string }[];
   showDate?: boolean;
+  linked?: boolean;
 }) {
   return (
-    <div className="overflow-auto">
+    <>
+    <ul className="divide-y divide-[#efeae2] md:hidden">
+      {orders.map((order) => {
+        const count = order.items.reduce((sum, item) => sum + item.quantity, 0);
+        const body = (
+          <>
+            <span className="flex items-center justify-between gap-3">
+              <span>{orderCode(order.number)}</span>
+              <StatusPill status={order.status} />
+            </span>
+            <span className="mt-1 block text-[#6d6960]">
+              {order.address.name}
+              {showDate && order.createdAt ? ` · ${shortDate(order.createdAt)}` : ""}
+            </span>
+            <span className="mt-1 block text-[#6d6960]">
+              {count} {count === 1 ? "item" : "items"} · {formatINR(order.total)} · {paymentLabel(order.payment)}
+            </span>
+          </>
+        );
+        return (
+          <li key={order.id} className="px-4 py-4 text-sm sm:px-5">
+            {linked ? (
+              <Link href={`/admin/orders/${order.id}`} className="block text-[#2a2925]">
+                {body}
+              </Link>
+            ) : (
+              body
+            )}
+          </li>
+        );
+      })}
+    </ul>
+    <div className="hidden overflow-auto md:block">
       <table className="w-full min-w-[760px] text-left text-sm">
         <thead className="text-[11px] tracking-[0.14em] text-[#8a847c]">
           <tr className="border-y border-[#e6dfd4]">
@@ -188,9 +282,13 @@ export function OrdersTable({
           {orders.map((order) => (
             <tr key={order.id} className="border-b border-[#efeae2]">
               <td className="px-5 py-3">
-                <Link href={`/admin/orders/${order.id}`} className="text-[#2a2925]">
-                  {orderCode(order.number)}
-                </Link>
+                {linked ? (
+                  <Link href={`/admin/orders/${order.id}`} className="text-[#2a2925]">
+                    {orderCode(order.number)}
+                  </Link>
+                ) : (
+                  <span>{orderCode(order.number)}</span>
+                )}
               </td>
               {showDate && <td className="text-[#6d6960]">{order.createdAt ? shortDate(order.createdAt) : ""}</td>}
               <td>{order.address.name}</td>
@@ -205,5 +303,6 @@ export function OrdersTable({
         </tbody>
       </table>
     </div>
+    </>
   );
 }

@@ -2,12 +2,19 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
+import { useEffect, useState } from "react";
 import { OrderDetail } from "@/components/order-detail";
 import { useStore } from "@/lib/store";
 
 export default function OrderPage() {
   const { id } = useParams<{ id: string }>();
   const { orders, ready } = useStore();
+  const [celebrate, setCelebrate] = useState(false);
+  useEffect(() => {
+    if (sessionStorage.getItem("earthen-placed") !== id) return;
+    setCelebrate(true);
+    sessionStorage.removeItem("earthen-placed");
+  }, [id]);
   const order = orders.find((entry) => entry.id === id);
   if (!ready) return null;
   if (!order) {
@@ -20,5 +27,5 @@ export default function OrderPage() {
       </div>
     );
   }
-  return <OrderDetail order={order} confirmation />;
+  return <OrderDetail order={order} confirmation celebrate={celebrate} />;
 }

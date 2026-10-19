@@ -3,19 +3,17 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { FormEvent, useEffect, useRef, useState } from "react";
-import { popularSearches, suggestionsFor } from "@/lib/catalog";
+import { Icon } from "@/components/icons";
+import { liveProduct, popularSearches, shopEntrances, suggestionsFor } from "@/lib/catalog";
 import { formatINR } from "@/lib/money";
-import { useStore } from "@/lib/store";
-
-const links = [
-  { href: "/shop?category=new", label: "New in" },
-  { href: "/shop?category=tops", label: "Tops" },
-  { href: "/shop?category=bottoms", label: "Bottoms" },
-  { href: "/shop?category=outerwear", label: "Outerwear" },
-];
+import { withStoreSale } from "@/lib/sale";
+import { announcementCopy, announcementLink, useStore } from "@/lib/store";
 
 export function Header() {
-  const { totals } = useStore();
+  const { totals, settings } = useStore();
+  const announcement = settings.announcementEnabled === false ? "" : announcementCopy(settings);
+  const announcementHref = announcementLink(settings.announcementHref);
+  const links = shopEntrances().map((category) => ({ href: `/shop?category=${category.slug}`, label: category.label }));
   const pathname = usePathname();
   const [menu, setMenu] = useState(false);
   const [search, setSearch] = useState(false);
@@ -66,9 +64,23 @@ export function Header() {
 
   return (
     <header className={`site-header${hidden ? " is-hidden" : ""}${solid ? " is-solid" : ""}`}>
-      <div className="bg-olive text-center text-[12px] tracking-wide text-cream">
-        <p className="px-4 py-2">Free shipping over ₹1,999 · 7-day returns</p>
-      </div>
+      {announcement && (
+        <div className="bg-olive text-center text-[12px] tracking-wide text-cream">
+          {announcementHref ? (
+            announcementHref.startsWith("/") ? (
+              <Link href={announcementHref} className="block px-4 py-2">
+                {announcement}
+              </Link>
+            ) : (
+              <a href={announcementHref} className="block px-4 py-2">
+                {announcement}
+              </a>
+            )
+          ) : (
+            <p className="px-4 py-2">{announcement}</p>
+          )}
+        </div>
+      )}
       <div className="nav-bar">
         <div className="relative mx-auto flex h-16 max-w-6xl items-center px-4 md:px-6">
           <button
@@ -96,17 +108,23 @@ export function Header() {
           </Link>
 
           <div className="ml-auto flex items-center justify-end gap-4 text-sm">
-            <button className="hidden h-11 items-center md:flex" onClick={() => setSearch(true)}>
+            <button className="hidden h-11 items-center gap-1.5 md:flex" onClick={() => setSearch(true)}>
+              <Icon name="search" className="h-4 w-4" />
               Search
             </button>
-            <button className="h-11 md:hidden" onClick={() => setSearch(true)} aria-label="Search">
-              Search
+            <button className="flex h-11 w-11 items-center justify-center md:hidden" onClick={() => setSearch(true)} aria-label="Search">
+              <Icon name="search" />
             </button>
-            <Link href="/account" className="hidden h-11 items-center md:flex">
+            <Link href="/account" className="hidden h-11 items-center gap-1.5 md:flex">
+              <Icon name="user" className="h-4 w-4" />
               Account
             </Link>
-            <Link href="/cart" className="flex h-11 items-center">
-              Bag (<span className={tick ? "count-tick" : undefined}>{totals.count}</span>)
+            <Link href="/cart" className="flex h-11 items-center gap-1.5" aria-label={`Bag, ${totals.count} items`}>
+              <Icon name="bag" className={`h-4 w-4 ${tick ? "bag-pop" : ""}`} />
+              <span className="hidden sm:inline">Bag</span>
+              <span>
+                (<span className={tick ? "count-tick" : undefined}>{totals.count}</span>)
+              </span>
             </Link>
           </div>
         </div>
@@ -116,13 +134,13 @@ export function Header() {
         <div className="fixed inset-0 z-50 bg-cream md:hidden">
           <div className="flex h-16 items-center justify-between border-b border-line px-4">
             <span className="tracking-[0.32em]">EARTHEN</span>
-            <button className="h-11 px-2" onClick={() => setMenu(false)} aria-label="Close menu">
-              Close
+            <button className="flex h-11 w-11 items-center justify-center" onClick={() => setMenu(false)} aria-label="Close menu">
+              <Icon name="close" />
             </button>
           </div>
           <nav className="flex flex-col px-6 py-6 text-2xl serif">
             {[...links, { href: "/about", label: "Our story" }, { href: "/account", label: "Account" }, { href: "/help", label: "Help" }].map((link, index) => (
-              <Link key={link.href} href={link.href} className="menu-link border-b border-line py-4 last:border-0" style={{ ["--i" as string]: index }}>
+              <Link key={link.href} href={link.href} className="menu-link border-b border-line py-4 last:border-0" style={{ ["--i" as string]: index }} onClick={() => setMenu(false)}>
                 {link.label}
               </Link>
             ))}
@@ -145,7 +163,8 @@ function SearchOverlay({
   onClose: () => void;
 }) {
   const router = useRouter();
-  const matches = suggestionsFor(query);
+  const { overrides, settings } = useStore();
+  const matches = suggestionsFor(query).map((product) => withStoreSale(liveProduct(product, overrides[product.slug]), settings));
 
   function submit(event: FormEvent) {
     event.preventDefault();
@@ -168,8 +187,8 @@ function SearchOverlay({
         <button type="submit" className="text-sm">
           Search
         </button>
-        <button type="button" className="text-sm text-muted" onClick={onClose}>
-          Close
+        <button type="button" className="flex h-11 w-11 items-center justify-center text-muted" onClick={onClose} aria-label="Close search">
+          <Icon name="close" />
         </button>
       </form>
       <div className="mx-auto max-w-3xl px-4 py-6">
@@ -181,7 +200,10 @@ function SearchOverlay({
                   <span className="h-14 w-12" style={{ background: product.colors[0].hex }} />
                   <span>
                     <span className="block">{product.name}</span>
-                    <span className="text-sm text-muted">{formatINR(product.price)}</span>
+                    <span className="text-sm text-muted">
+                      {formatINR(product.price)}
+                      {product.price < product.basePrice && <span className="ml-2 line-through">{formatINR(product.basePrice)}</span>}
+                    </span>
                   </span>
                 </Link>
               </li>

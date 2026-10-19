@@ -323,6 +323,59 @@ a.underline:hover::after {
   animation: count-tick 280ms var(--ease);
 }
 
+.bag-pop {
+  display: inline-block;
+  animation: bag-pop 420ms var(--ease);
+}
+
+@keyframes bag-pop {
+  40% {
+    transform: translateY(-3px) scale(1.14);
+  }
+}
+
+.line-land {
+  animation: line-land 720ms var(--ease);
+}
+
+@keyframes line-land {
+  0% {
+    background: color-mix(in srgb, var(--color-sand) 70%, transparent);
+  }
+}
+
+.step-pop {
+  animation: step-pop 460ms var(--ease) backwards;
+  animation-delay: calc(var(--i, 0) * 80ms);
+}
+
+@keyframes step-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.55);
+  }
+}
+
+.step-line {
+  transform-origin: right center;
+  animation: step-draw 420ms var(--ease) backwards;
+  animation-delay: calc(var(--i, 0) * 80ms);
+}
+
+@keyframes step-draw {
+  from {
+    transform: scaleX(0);
+  }
+}
+
+.thanks-in {
+  animation: settle 0.7s var(--ease) both;
+}
+
+.star-pop {
+  animation: heart-pop 280ms var(--ease);
+}
+
 @keyframes count-tick {
   from {
     opacity: 0;
@@ -415,6 +468,18 @@ a.underline:hover::after {
   stroke-dasharray: 36;
   stroke-dashoffset: 36;
   animation: draw 0.45s var(--ease) 0.35s forwards;
+}
+
+.draw-ring-sm {
+  stroke-dasharray: 44;
+  stroke-dashoffset: 44;
+  animation: draw 0.55s var(--ease) forwards;
+}
+
+.draw-check-sm {
+  stroke-dasharray: 14;
+  stroke-dashoffset: 14;
+  animation: draw 0.35s var(--ease) 0.22s forwards;
 }
 
 @keyframes draw {
@@ -579,6 +644,39 @@ a.underline:hover::after {
   color: var(--color-ink);
 }
 
+.story-item::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 1px;
+  background: var(--color-line);
+}
+
+.story-node {
+  position: absolute;
+  top: 5rem;
+  left: 0;
+  z-index: 1;
+  width: 0.55rem;
+  height: 0.55rem;
+  background: var(--color-ink);
+  transform: translate(-50%, -50%);
+  box-shadow: 0 0 0 5px var(--color-cream);
+}
+
+@media (min-width: 768px) {
+  .story-item::before,
+  .story-node {
+    left: 50%;
+  }
+
+  .story-node {
+    top: 50%;
+  }
+}
+
 .zoom-frame {
   position: relative;
   overflow: hidden;
@@ -604,6 +702,12 @@ a.underline:hover::after {
   .search-pop,
   .shimmer::after,
   .count-tick,
+  .bag-pop,
+  .line-land,
+  .step-pop,
+  .step-line,
+  .thanks-in,
+  .star-pop,
   .drawer,
   .drawer-backdrop,
   .note-in,
@@ -611,6 +715,8 @@ a.underline:hover::after {
   .heart.is-pop,
   .draw-ring,
   .draw-check,
+  .draw-ring-sm,
+  .draw-check-sm,
   .cloth-sway {
     animation: none;
   }
@@ -648,8 +754,14 @@ a.underline:hover::after {
   }
 
   .draw-ring,
-  .draw-check {
+  .draw-check,
+  .draw-ring-sm,
+  .draw-check-sm {
     stroke-dashoffset: 0;
+  }
+
+  .step-line {
+    transform: none;
   }
 
   .motion-btn:hover,

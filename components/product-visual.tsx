@@ -46,6 +46,7 @@ export function ProductVisual({
   silhouette,
   photos,
   stage = false,
+  transitionName,
 }: {
   slug: string;
   name: string;
@@ -54,6 +55,7 @@ export function ProductVisual({
   silhouette: Silhouette;
   photos?: ProductPhoto[];
   stage?: boolean;
+  transitionName?: string;
 }) {
   const photographed = Boolean(photos?.length);
   const frames: ProductPhoto[] = photographed
@@ -121,10 +123,11 @@ export function ProductVisual({
     </div>
   );
 
+  const transition = transitionName ?? `product-${slug}`;
   const picture = !ViewTransition ? (
-    <div style={{ viewTransitionName: `product-${slug}` }}>{frame}</div>
+    <div style={{ viewTransitionName: transition }}>{frame}</div>
   ) : (
-    <ViewTransition name={`product-${slug}`} update="none">
+    <ViewTransition name={transition} update="none">
       {frame}
     </ViewTransition>
   );

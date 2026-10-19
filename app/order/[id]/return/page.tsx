@@ -15,6 +15,7 @@ export default function ReturnPage() {
   const [comments, setComments] = useState("");
   const [resolution, setResolution] = useState<"refund" | "exchange">("refund");
   const [error, setError] = useState<string | null>(null);
+  const [sent, setSent] = useState(false);
 
   if (!ready) return null;
   if (!order) return <p className="px-4 py-16">Order not found.</p>;
@@ -34,7 +35,8 @@ export default function ReturnPage() {
       setError(message);
       return;
     }
-    router.push(`/order/${order.id}`);
+    setSent(true);
+    window.setTimeout(() => router.push(`/order/${order.id}`), 700);
   }
 
   return (
@@ -74,7 +76,12 @@ export default function ReturnPage() {
         Pickup from {order.address.line1}, {order.address.city} {order.address.pin}
       </p>
       {error && <p className="mt-3 text-sm">{error}</p>}
-      <button className="mt-6 h-12 w-full bg-ink text-xs tracking-[0.16em] text-cream">SUBMIT REQUEST</button>
+      <button disabled={sent} className={`motion-btn relative mt-6 h-12 w-full bg-ink text-xs tracking-[0.16em] text-cream ${sent ? "done" : ""}`}>
+        <span className="lbl">SUBMIT REQUEST</span>
+        <span className="tick" aria-hidden="true">
+          ✓
+        </span>
+      </button>
     </form>
   );
 }

@@ -2,8 +2,12 @@
 
 import { FormEvent, useState } from "react";
 import { brand } from "@/lib/brand";
+import { phoneHref, siteContent } from "@/lib/site";
+import { useStore } from "@/lib/store";
 
 export default function ContactPage() {
+  const { settings } = useStore();
+  const studio = siteContent(settings);
   const [sent, setSent] = useState(false);
 
   function submit(event: FormEvent<HTMLFormElement>) {
@@ -15,22 +19,22 @@ export default function ContactPage() {
     <div className="mx-auto max-w-xl px-4 py-12 md:px-6">
       <h1 className="serif text-4xl">Contact</h1>
       <p className="mt-4 text-sm leading-6 text-muted">
-        {brand.legalName}
+        {studio.legalName}
         <br />
-        {brand.address}
+        {studio.address}
         <br />
-        GSTIN {brand.gstin}
+        GSTIN {settings.gstin || brand.gstin}
       </p>
       <p className="mt-3 text-sm leading-6">
-        <a href={brand.phoneHref} className="underline">
-          {brand.phone}
+        <a href={phoneHref(studio.phone)} className="underline">
+          {studio.phone}
         </a>
         <span className="mx-2 text-muted">·</span>
-        <a href={`mailto:${brand.email}`} className="underline">
-          {brand.email}
+        <a href={`mailto:${studio.email}`} className="underline">
+          {studio.email}
         </a>
       </p>
-      <p className="mt-2 text-sm text-muted">{brand.hours}</p>
+      <p className="mt-2 text-sm text-muted">{studio.hours}</p>
       {sent ? (
         <p className="mt-8 text-sm">Message received. We reply within one working day.</p>
       ) : (

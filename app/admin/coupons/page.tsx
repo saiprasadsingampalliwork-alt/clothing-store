@@ -93,7 +93,35 @@ export default function CouponsPage() {
           Expired {counts.expired}
         </FilterChip>
       </div>
-      <div className="mt-4 overflow-auto border border-[#e6dfd4] bg-white">
+      <div className="mt-4 border border-[#e6dfd4] bg-white">
+        <ul className="divide-y divide-[#efeae2] md:hidden">
+          {rows.map((coupon) => {
+            const state = couponState(coupon, today);
+            return (
+              <li key={coupon.code} className="px-4 py-4 text-sm">
+                <span className="flex items-center justify-between gap-3">
+                  <button
+                    className="tracking-wide"
+                    onClick={() => {
+                      setDraft(coupon);
+                      setOpen(true);
+                    }}
+                  >
+                    {coupon.code}
+                  </button>
+                  <StatusPill status={state} />
+                </span>
+                <p className="mt-1 text-[#6d6960]">
+                  {offer(coupon)} · {till(coupon.ends)}
+                </p>
+                <button className="mt-2 text-xs text-[#ab6446]" onClick={() => void removeCoupon(coupon.code)}>
+                  Remove
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+        <div className="hidden overflow-auto md:block">
         <table className="w-full min-w-[720px] text-left text-sm">
           <thead className="text-[11px] tracking-[0.14em] text-[#8a847c]">
             <tr className="border-b border-[#e6dfd4]">
@@ -138,6 +166,7 @@ export default function CouponsPage() {
             })}
           </tbody>
         </table>
+        </div>
         {rows.length === 0 && <p className="px-5 py-6 text-sm text-[#6d6960]">No coupons in this view.</p>}
       </div>
       {open && (

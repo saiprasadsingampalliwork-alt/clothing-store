@@ -1,5 +1,5 @@
-import { notFound } from "next/navigation";
 import { ProductView } from "@/components/product-view";
+import { RemoteProduct } from "@/components/remote-product";
 import { getProduct, products } from "@/lib/catalog";
 
 export function generateStaticParams() {
@@ -15,6 +15,6 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
 export default async function ProductPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const product = getProduct(slug);
-  if (!product) notFound();
+  if (!product) return <RemoteProduct slug={slug} />;
   return <ProductView product={product} />;
 }

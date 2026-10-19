@@ -3,8 +3,11 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import { CouponOffers } from "@/components/coupon-offers";
 import { Fold } from "@/components/fold";
+import { api } from "@/lib/api";
 import { formatINR, shippingFee } from "@/lib/money";
+import { loadRazorpay, openRazorpay, type RazorpaySession } from "@/lib/razorpay";
 import { useStore, type Address, type Order } from "@/lib/store";
 
 const payments: { id: Order["payment"]; label: string; hint: string }[] = [
@@ -39,6 +42,8 @@ export default function CheckoutPage() {
   const [giftMessage, setGiftMessage] = useState("");
   const [hidePrices, setHidePrices] = useState(false);
   const [updates, setUpdates] = useState<"sms" | "whatsapp">("sms");
+  const [paying, setPaying] = useState(false);
+  const [gateway, setGateway] = useState(false);
 
   const { subtotal, discount } = store.totals;
   const rules = store.settings;
@@ -50,6 +55,21 @@ export default function CheckoutPage() {
   const codBlocked = rules.codEnabled === false || after + shipping + rules.codFee > rules.codMax;
 
   const saved = store.user?.addresses ?? [];
+
+  useEffect(() => {
+    if (!store.ready) return;
+    let cancelled = false;
+    api<{ configured: boolean }>("/payments/status")
+      .then((data) => {
+        if (!cancelled) setGateway(Boolean(data.configured));
+      })
+      .catch(() => {
+        if (!cancelled) setGateway(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [store.ready]);
 
   useEffect(() => {
     if (!store.user) return;
@@ -120,7 +140,7 @@ export default function CheckoutPage() {
       ...form,
       isDefault: false,
     };
-    const result = await store.placeOrder({
+    const orderInput = {
       email,
       phone: form.phone,
       address,
@@ -128,12 +148,51 @@ export default function CheckoutPage() {
       payment,
       updates,
       gift: giftWrap || giftMessage.trim() || hidePrices ? { wrap: giftWrap, message: giftMessage.trim(), hidePrices } : undefined,
-    });
-    if (typeof result === "string") {
-      setError(result);
-      return;
+    };
+    setPaying(true);
+    setError(null);
+    try {
+      let razorpay: { orderId: string; paymentId: string; signature: string } | undefined;
+      if (payment !== "cod") {
+        try {
+          const session = await api<{ configured: false } | RazorpaySession>("/payments/checkout", {
+            method: "POST",
+            body: JSON.stringify({
+              ...orderInput,
+              coupon: store.coupon ?? undefined,
+              items: store.cart.map((item) => ({ slug: item.slug, color: item.color, size: item.size, quantity: item.quantity })),
+            }),
+          });
+          if (session.configured) {
+            const loaded = await loadRazorpay();
+            if (!loaded) {
+              setError("The payment window could not be opened. Try again in a moment.");
+              return;
+            }
+            const proof = await openRazorpay(session, { name: form.name, email, contact: form.phone }, payment);
+            if (!proof) {
+              setError("Payment was not completed.");
+              return;
+            }
+            razorpay = proof;
+          }
+        } catch (error) {
+          if (!(error instanceof TypeError)) {
+            setError(error instanceof Error ? error.message : "Payment could not be started.");
+            return;
+          }
+        }
+      }
+      const result = await store.placeOrder({ ...orderInput, razorpay });
+      if (typeof result === "string") {
+        setError(result);
+        return;
+      }
+      sessionStorage.setItem("earthen-placed", result.id);
+      router.push(`/order/${result.id}`);
+    } finally {
+      setPaying(false);
     }
-    router.push(`/order/${result.id}`);
   }
 
   if (!store.ready) return null;
@@ -259,6 +318,10 @@ export default function CheckoutPage() {
           </label>
         </Fold>
 
+        <section>
+          <CouponOffers subtotal={subtotal} />
+        </section>
+
         <Fold title="Payment" open={sections.payment} onToggle={() => toggleSection("payment")}>
           <div className="mt-3 grid gap-3">
             {payments.map((option) => {
@@ -289,9 +352,16 @@ export default function CheckoutPage() {
             {error}
           </p>
         )}
-        <button className="h-12 w-full bg-terra text-sm tracking-[0.16em] text-cream">PLACE ORDER</button>
+        <button disabled={paying} className="h-12 w-full bg-terra text-sm tracking-[0.16em] text-cream disabled:opacity-60">
+          {paying ? "PLEASE WAIT" : "PLACE ORDER"}
+        </button>
         <p className="text-center text-xs text-muted">
-          This is a prototype. No payment is taken. <Link href="/cart" className="underline">Return to bag</Link>
+          {gateway
+            ? "UPI, cards, and net banking are collected by Razorpay. Cash on delivery is paid to the courier."
+            : "This is a prototype. No payment is taken."}{" "}
+          <Link href="/cart" className="underline">
+            Return to bag
+          </Link>
         </p>
       </form>
 
@@ -330,13 +400,16 @@ function Summary({
             <span>
               {item.name} · {item.color} / {item.size} × {item.quantity}
             </span>
-            <span>{formatINR(item.price * item.quantity)}</span>
+            <span>{formatINR(store.priceOf(item.slug, item.price) * item.quantity)}</span>
           </li>
         ))}
       </ul>
       <dl className="mt-4 space-y-2 border-t border-line pt-4 text-sm">
         <div className="flex justify-between"><dt>Subtotal</dt><dd>{formatINR(subtotal)}</dd></div>
-        <div className="flex justify-between"><dt>Discount</dt><dd>−{formatINR(discount)}</dd></div>
+        <div className="flex justify-between">
+          <dt>Discount{discount > 0 && store.coupon ? ` · ${store.coupon}` : ""}</dt>
+          <dd>−{formatINR(discount)}</dd>
+        </div>
         <div className="flex justify-between"><dt>Shipping</dt><dd>{shipping === 0 ? "Free" : formatINR(shipping)}</dd></div>
         {codFee > 0 && <div className="flex justify-between"><dt>COD fee</dt><dd>{formatINR(codFee)}</dd></div>}
         <div className="flex justify-between border-t border-line pt-2 text-base"><dt>Total</dt><dd>{formatINR(total)}</dd></div>

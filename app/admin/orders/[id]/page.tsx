@@ -70,6 +70,26 @@ export default function AdminOrderPage() {
         <div className="space-y-4">
           <section className="border border-[#e6dfd4] bg-white p-5">
             <h2 className="text-sm font-medium">Items</h2>
+            <ul className="mt-4 divide-y divide-[#efeae2] border-t border-[#e6dfd4] md:hidden">
+              {order.items.map((item) => (
+                <li key={`${item.slug}-${item.color}-${item.size}`} className="py-3 text-sm">
+                  <span className="flex items-start justify-between gap-3">
+                    <span className="flex min-w-0 items-center gap-3">
+                      <span className="h-8 w-8 shrink-0" style={{ background: item.hex }} />
+                      <span className="min-w-0">
+                        <span className="block">{item.name}</span>
+                        <span className="block text-xs text-[#8a847c]">
+                          {item.color} · {item.size} · Qty {item.quantity}
+                        </span>
+                      </span>
+                    </span>
+                    <span className="shrink-0">{formatINR(item.price * item.quantity)}</span>
+                  </span>
+                  <span className="mt-1 block text-xs text-[#8a847c]">{sku(item.slug, item.color, item.size)}</span>
+                </li>
+              ))}
+            </ul>
+            <div className="hidden md:block">
             <table className="mt-4 w-full text-left text-sm">
               <thead className="text-[11px] tracking-[0.14em] text-[#8a847c]">
                 <tr className="border-b border-[#e6dfd4]">
@@ -102,6 +122,7 @@ export default function AdminOrderPage() {
                 ))}
               </tbody>
             </table>
+            </div>
             <dl className="mt-4 space-y-1 text-sm">
               <div className="flex justify-between"><dt>Subtotal</dt><dd>{formatINR(order.subtotal)}</dd></div>
               <div className="flex justify-between"><dt>Shipping</dt><dd>{order.shipping ? formatINR(order.shipping) : "Free"}</dd></div>
@@ -163,7 +184,7 @@ export default function AdminOrderPage() {
             <dl className="mt-3 space-y-2">
               <div className="flex justify-between"><dt className="text-[#6d6960]">Method</dt><dd>{paymentLabel(order.payment).replace(" · Paid", "")}</dd></div>
               <div className="flex justify-between"><dt className="text-[#6d6960]">Status</dt><dd>{order.payment === "cod" ? "Due" : "Paid"}</dd></div>
-              <div className="flex justify-between"><dt className="text-[#6d6960]">Gateway ID</dt><dd className="text-[#6d6960]">{order.payment === "cod" ? "—" : `pay_${order.id.slice(-8)}`}</dd></div>
+              <div className="flex justify-between"><dt className="text-[#6d6960]">Gateway ID</dt><dd className="text-[#6d6960]">{order.razorpayPaymentId || "—"}</dd></div>
             </dl>
           </section>
           <form id="shipment" onSubmit={ship} className="border border-[#e6dfd4] bg-white p-5 text-sm">

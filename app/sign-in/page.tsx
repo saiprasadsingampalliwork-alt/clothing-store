@@ -4,10 +4,12 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useState } from "react";
 import { Input } from "@/components/auth";
+import { siteContent } from "@/lib/site";
 import { useStore } from "@/lib/store";
 
 export default function SignInPage() {
-  const { signIn } = useStore();
+  const { signIn, settings } = useStore();
+  const loginImage = siteContent(settings).loginImage;
   const router = useRouter();
   const [email, setEmail] = useState("aisha@earthen.in");
   const [password, setPassword] = useState("");
@@ -71,8 +73,8 @@ export default function SignInPage() {
       </section>
       <section className="relative flex min-h-72 items-end overflow-hidden md:min-h-0">
         <img
-          src="/photos/shelf.jpg"
-          alt="Folded shirts in olive, sand, clay, and ivory on a wooden shelf"
+          src={loginImage.src}
+          alt={loginImage.alt}
           className="absolute inset-0 size-full object-cover object-[center_60%]"
         />
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-ink/55 via-ink/15 to-transparent" />

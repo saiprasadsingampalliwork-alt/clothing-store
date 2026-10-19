@@ -18,7 +18,7 @@ export function useReveal() {
           io.unobserve(entry.target);
         });
       },
-      { threshold: 0.15 },
+      { threshold: 0 },
     );
 
     function watch(el: Element) {

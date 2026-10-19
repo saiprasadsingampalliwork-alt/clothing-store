@@ -1,23 +1,16 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
-
-const frames = [
-  {
-    src: "/photos/hero-chair.jpg",
-    alt: "Olive linen shirt on a wooden chair, with a folded clay tee, in morning light",
-  },
-  {
-    src: "/photos/trouser-rail.jpg",
-    alt: "Terracotta, sand, and olive trousers hanging from a wooden rail",
-  },
-  {
-    src: "/photos/stack.jpg",
-    alt: "A clay shirt, a moss knit, and terracotta trousers folded on linen",
-  },
-];
+import { salePercent, storeSaleActive } from "@/lib/sale";
+import { siteContent } from "@/lib/site";
+import { useStore } from "@/lib/store";
 
 export function HeroCarousel() {
+  const settings = useStore().settings;
+  const frames = siteContent(settings).hero;
+  const saleLive = storeSaleActive(settings);
+  const saleName = settings.saleName?.trim() || "Sale";
   const [index, setIndex] = useState(0);
   const [paused, setPaused] = useState(false);
 
@@ -29,7 +22,7 @@ export function HeroCarousel() {
       setIndex((current) => (current + 1) % frames.length);
     }, 2000);
     return () => window.clearInterval(id);
-  }, [paused]);
+  }, [paused, frames.length]);
 
   return (
     <div
@@ -48,6 +41,15 @@ export function HeroCarousel() {
           className={`hero-slide hero-drift ${frameIndex === index ? "is-on" : ""}`}
         />
       ))}
+      {saleLive && (
+        <Link href="/shop" className="absolute inset-x-0 bottom-0 z-10 flex items-end justify-between gap-4 bg-olive px-5 py-4 text-cream">
+          <span>
+            <span className="eyebrow block text-cream/80">{saleName}</span>
+            <span className="serif mt-1 block text-3xl leading-none">{salePercent(settings)}% off</span>
+          </span>
+          <span className="pb-1 text-xs tracking-[0.16em]">SHOP</span>
+        </Link>
+      )}
     </div>
   );
 }
