@@ -6,9 +6,10 @@ import type { ProductPhoto } from "@/lib/catalog";
 import { STUDIO_VIEWS, studioSrc, type Silhouette, type StudioView } from "@/lib/studio";
 
 const ViewTransition = (
-  (React as unknown as { unstable_ViewTransition?: ComponentType<{ name?: string; update?: string; children?: ReactNode }> }).unstable_ViewTransition ??
-  (React as unknown as { ViewTransition?: ComponentType<{ name?: string; update?: string; children?: ReactNode }> }).ViewTransition
-) as ComponentType<{ name?: string; update?: string; children?: ReactNode }>;
+  React as unknown as {
+    unstable_ViewTransition?: ComponentType<{ name?: string; update?: string; children?: ReactNode }>;
+  }
+).unstable_ViewTransition;
 
 function ShotImage({ src, alt, tone }: { src: string; alt: string; tone: string }) {
   const ref = useRef<HTMLImageElement>(null);

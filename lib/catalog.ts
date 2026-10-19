@@ -703,7 +703,7 @@ export function categoryLabel(slug: string) {
     .join(" ");
 }
 
-export function filterProducts(options: {
+export function filterProducts<T extends Product = Product>(options: {
   category?: string;
   query?: string;
   sizes?: string[];
@@ -713,10 +713,11 @@ export function filterProducts(options: {
   max?: number;
   inStock?: boolean;
   sort?: string;
-  source?: Product[];
-}) {
+  source?: readonly T[];
+}): T[] {
   const query = options.query?.trim().toLowerCase() ?? "";
-  let list = (options.source ?? catalogSource()).filter((product) => {
+  const rows: T[] = options.source ? [...options.source] : (catalogSource() as T[]);
+  let list = rows.filter((product) => {
     if (options.category === "new" && !product.isNew) return false;
     if (options.category && options.category !== "new" && options.category !== "all" && product.category !== options.category) {
       return false;
