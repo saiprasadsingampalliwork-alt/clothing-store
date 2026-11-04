@@ -6,7 +6,9 @@ import { announcementCopy, announcementLink, useStore, type Banner, type StaffRo
 import { AdminHeader, StatusPill, roleLabel } from "@/components/admin-shell";
 import { Icon } from "@/components/icons";
 import { ImageUpload } from "@/components/image-upload";
-import { siteContent, type SiteContent, type SiteImage } from "@/lib/site";
+import { allAudiences, audiencePhoto } from "@/lib/catalog";
+import { ALL_REGIONS, INDIAN_STATES, UNION_TERRITORIES } from "@/lib/india";
+import { audienceTile, siteContent, withAudienceTile, type SiteContent, type SiteImage } from "@/lib/site";
 
 export default function SettingsPage() {
   const { settings, saveSettings, staffList, inviteStaff, staff, ready, banners, saveBanner, removeBanner } = useStore();
@@ -173,6 +175,7 @@ export default function SettingsPage() {
               </label>
             </div>
           </Card>
+          <DeliveryAreas off={form.disabledStates ?? []} onChange={(disabledStates) => setForm({ ...form, disabledStates })} />
           <Card title="Cash on delivery">
             <Toggle
               label="Enable cash on delivery"
@@ -352,6 +355,7 @@ function normalizeSettings(settings: StoreSettings): StoreSettings {
     salePercent: Math.min(90, Math.max(0, Math.round(Number(settings.salePercent) || 0))),
     saleStart: settings.saleStart ?? "",
     saleEnd: settings.saleEnd ?? "",
+    disabledStates: [...(settings.disabledStates ?? [])].sort(),
   };
 }
 
@@ -440,40 +444,44 @@ function Pictures({ content, onChange }: { content: SiteContent; onChange: (cont
           />
         </div>
         <div>
-          <h3 className="text-sm">Women, Men, Unisex</h3>
-          <p className="mt-1 text-sm leading-6 text-[#6d6960]">Portrait, about 3:4. The line under each name is the caption on the homepage.</p>
+          <h3 className="text-sm">Audience tiles</h3>
+          <p className="mt-1 text-sm leading-6 text-[#6d6960]">
+            One homepage tile for each audience in the shop, in the order set under Audiences. Portrait, about 3:4. Until you upload a photo, the tile borrows one from
+            that audience&rsquo;s products. Switched-off audiences can be prepared here before launch.
+          </p>
           <ul className="mt-4 grid gap-4 sm:grid-cols-3">
-            {content.audiences.map((audience) => (
-              <li key={audience.id} className="border border-[#e6dfd4] bg-[#fbf8f4]">
-                <img src={audience.image.src} alt="" className="aspect-[3/4] w-full object-cover" />
-                <div className="space-y-3 p-3">
-                  <p className="text-sm capitalize">{audience.id}</p>
-                  <label className="block text-xs text-[#6d6960]">
-                    Caption
-                    <input
-                      value={audience.text}
-                      onChange={(event) =>
-                        onChange({
-                          ...content,
-                          audiences: content.audiences.map((item) => (item.id === audience.id ? { ...item, text: event.target.value } : item)),
-                        })
-                      }
-                      className="mt-1 h-11 w-full border border-[#e6dfd4] bg-white px-3 text-sm text-[#2a2925] outline-none"
-                      aria-label={`${audience.id} caption`}
+            {allAudiences().map((audience) => {
+              const borrowed = audiencePhoto(audience.slug);
+              const tile = audienceTile(content, audience.slug, borrowed);
+              const own = tile.image.src !== borrowed.src;
+              // Only an uploaded photo is saved; a borrowed one keeps following the products.
+              const base = own ? tile : { ...tile, image: { src: "", alt: "" } };
+              return (
+                <li key={audience.slug} className="border border-[#e6dfd4] bg-[#fbf8f4]">
+                  <img src={tile.image.src} alt="" className="aspect-[3/4] w-full bg-[#efeae2] object-cover" />
+                  <div className="space-y-3 p-3">
+                    <p className="text-sm">
+                      {audience.label}
+                      {!audience.active && <span className="ml-2 text-xs text-[#8a847c]">Not in shop yet</span>}
+                      {!own && <span className="mt-0.5 block text-xs text-[#8a847c]">Borrowed product photo</span>}
+                    </p>
+                    <label className="block text-xs text-[#6d6960]">
+                      Caption
+                      <input
+                        value={tile.text}
+                        onChange={(event) => onChange(withAudienceTile(content, audience.slug, { text: event.target.value }, base))}
+                        className="mt-1 h-11 w-full border border-[#e6dfd4] bg-white px-3 text-sm text-[#2a2925] outline-none"
+                        aria-label={`${audience.label} caption`}
+                      />
+                    </label>
+                    <ImageUpload
+                      label={own ? "REPLACE" : "UPLOAD"}
+                      onUploaded={(src) => onChange(withAudienceTile(content, audience.slug, { image: { src, alt: `${audience.label}, worn` } }, base))}
                     />
-                  </label>
-                  <ImageUpload
-                    label="REPLACE"
-                    onUploaded={(src) =>
-                      onChange({
-                        ...content,
-                        audiences: content.audiences.map((item) => (item.id === audience.id ? { ...item, image: { ...item.image, src } } : item)),
-                      })
-                    }
-                  />
-                </div>
-              </li>
-            ))}
+                  </div>
+                </li>
+              );
+            })}
           </ul>
         </div>
       </div>
@@ -516,5 +524,50 @@ function Toggle({ label, hint, on, onChange }: { label: string; hint: string; on
         <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white ${on ? "left-5" : "left-0.5"}`} />
       </button>
     </div>
+  );
+}
+
+/** Which states and UTs the studio delivers to. Checkout, the product page, and the API all follow this. */
+function DeliveryAreas({ off, onChange }: { off: string[]; onChange: (off: string[]) => void }) {
+  const closed = new Set(off);
+  const open = ALL_REGIONS.length - closed.size;
+  function toggle(name: string, on: boolean) {
+    const next = new Set(closed);
+    if (on) next.delete(name);
+    else next.add(name);
+    onChange([...next].sort());
+  }
+  return (
+    <Card title="Delivery areas">
+      <p className="mb-3 text-sm text-[#6d6960]">
+        Shoppers can only check out to the places switched on. Delivering to {open === ALL_REGIONS.length ? "all" : open} of {ALL_REGIONS.length} states and union
+        territories.
+      </p>
+      <div className="mb-4 flex gap-3 text-sm">
+        <button type="button" className="underline disabled:opacity-40" disabled={closed.size === 0} onClick={() => onChange([])}>
+          All on
+        </button>
+        <button type="button" className="underline disabled:opacity-40" disabled={closed.size === ALL_REGIONS.length} onClick={() => onChange([...ALL_REGIONS].sort())}>
+          All off
+        </button>
+      </div>
+      {[
+        ["States", INDIAN_STATES],
+        ["Union territories", UNION_TERRITORIES],
+      ].map(([group, names]) => (
+        <fieldset key={group as string} className="mb-4 last:mb-0">
+          <legend className="mb-2 text-[11px] tracking-[0.14em] text-[#8a847c]">{(group as string).toUpperCase()}</legend>
+          <div className="grid gap-x-6 gap-y-1 sm:grid-cols-2">
+            {(names as string[]).map((name) => (
+              <label key={name} className="flex items-center justify-between gap-3 py-1 text-sm">
+                <span className={closed.has(name) ? "text-[#8a847c]" : ""}>{name}</span>
+                <input type="checkbox" checked={!closed.has(name)} onChange={(event) => toggle(name, event.target.checked)} className="h-4 w-4 accent-[#5b6043]" />
+              </label>
+            ))}
+          </div>
+        </fieldset>
+      ))}
+      {open === 0 && <p className="mt-3 text-sm text-[#ab6446]">With every area off, nobody can check out.</p>}
+    </Card>
   );
 }

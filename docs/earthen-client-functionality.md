@@ -101,13 +101,15 @@ The summary shows subtotal, shipping, discount, and total, all inclusive of GST.
 
 An empty bag offers a way back into the shop.
 
+When the shopper is signed in and pieces are still in the bag an hour later, WhatsApp goes to the mobile on the account. The message names the pieces and the total of those pieces at the current price. Shipping and a coupon are not included. It is sent once for that bag. Changing the bag starts the hour again. Checking out clears the bag, so no reminder is sent. A guest bag stays on that browser and is not messaged. Until WhatsApp is configured, the reminder waits.
+
 ### 2.5 Checkout
 
 Checkout does not ask for an account. It is one page, in sections, with the order summary beside it (or tucked behind a tap on a phone).
 
 1. **Contact.** Email for the receipt.
 2. **Address.** Full name, mobile, address, area, city, state, and a 6-digit PIN. The state list is Karnataka, Tamil Nadu, Telangana, Maharashtra, Delhi, Kerala, Gujarat, and West Bengal. Saved addresses can be picked when the shopper is signed in, including the one marked default. The PIN is checked before payment. A code that starts with 0 or 9, or is not six digits, is refused.
-3. **Order updates.** SMS or WhatsApp. The choice is stored on the order. The note on the page says the message is sent when the order ships and when it is out for delivery. The messages the system sends today are emails.
+3. **Order updates.** WhatsApp goes to the mobile on the address: confirmed, packed, shipped, out for delivery, delivered, cancelled, and the return messages. The note under the mobile says the receipt still goes to the email, and that placing the order agrees to those WhatsApp messages. The same events are also emailed.
 4. **Delivery.** Standard or express. Rates, the free-shipping threshold, and the day counts come from studio settings. A free-shipping coupon removes the charge on either speed.
 5. **Gift, optional and closed until opened.** Gift wrap is included, with tissue, a recycled mailer, and a card. The card message can be up to 140 characters. Prices can be left off the packing slip. They stay on the invoice.
 6. **Coupon.** The same code box and offer list as the bag.
@@ -140,7 +142,7 @@ The order page shows:
 
 **Return or exchange**
 
-The shopper chooses a reason (size or fit, changed my mind, damaged, not as described, or wrong item), writes a comment, and chooses refund or exchange. Pickup uses the delivery address. The request waits for staff. The customer is emailed when the request is received, approved, declined, or completed.
+The shopper chooses a reason (size or fit, changed my mind, damaged, not as described, or wrong item), writes a comment, and chooses refund or exchange. Pickup uses the delivery address. The request waits for staff. The customer gets an email and a WhatsApp on the order mobile when the request is received, approved, declined, or completed.
 
 The window is the number of days in studio settings, counted from the delivery date. After it closes, the request is refused. Approving a refund marks the order Returned, puts the pieces back in stock, and sends a Razorpay refund when the order was paid online. Approving an exchange emails the customer and leaves the stock as it is, for staff to arrange the swap. Rejecting the request puts the order back to Delivered.
 
@@ -156,11 +158,11 @@ Name, email, 10-digit mobile, and a password of at least 8 characters. The new a
 
 **Sign in**
 
-Email and password. A wrong password or a blocked account is refused. A blocked person is told to write to the studio. After a successful sign-in the shopper lands on the account overview, and the bag and wishlist on that browser are kept with the account.
+Email and password, or the mobile on the account. WhatsApp sends a 6-digit code to that mobile. The code expires after 10 minutes, and five wrong entries use it up. A wrong password, a wrong code, or a blocked account is refused. A blocked person is told to write to the studio. A mobile that is not on an account is told so, and asked to create one. After a successful sign-in the shopper lands on the account overview, and the bag and wishlist on that browser are kept with the account.
 
 **Forgot password**
 
-The shopper enters their email and receives a reset link. The link expires after 30 minutes. They choose a new password and return to sign in.
+The shopper can enter the mobile on the account. If that number is on one account, WhatsApp sends a 6-digit code. The code expires after 10 minutes, and five wrong entries use it up. They type the code and a new password, then return to sign in. They can still enter an email instead and receive a reset link, which expires after 30 minutes.
 
 **Account overview**
 
@@ -179,6 +181,8 @@ A list of this person’s orders: number, date, status, and total. Each row open
 **Wishlist**
 
 Saved colourways, with audience, name, colour, and price. From the list the shopper can pick a size and quantity and add the piece to the bag. A size that is gone is refused. Without an account the wishlist stays on that browser. After sign-in it stays with the account. The heart on a product or a card removes it.
+
+When the shopper is signed in and a saved piece has not been ordered, WhatsApp goes to the mobile on the account an hour after the wishlist last changed. The message names those pieces. It is sent once for that list. A piece already on an order for that account's email, other than a cancelled or returned order, is left out. A guest wishlist is not messaged. Until WhatsApp is configured, the reminder waits.
 
 **Sign out**
 
@@ -272,14 +276,14 @@ The header, homepage, and shop read this list.
 
 Moving an order to Cancelled while it is still Confirmed or Packed puts the pieces back in stock, gives the coupon use back, and sends a Razorpay refund when the order was paid online.
 
-The customer receives an email when the status changes: confirmed, packed, shipped, out for delivery, delivered, cancelled, and the return emails listed below.
+The customer receives an email and a WhatsApp when the status changes: confirmed, packed, shipped, out for delivery, delivered, cancelled, and the return messages listed below. WhatsApp uses the mobile on the order.
 
 ### 3.6 Returns and refunds
 
 - Counts for requests waiting, rupees still to refund, return rate, and average time to decide.
 - Filter: Requested, Approved, Rejected.
 - Each row shows the order, item, reason, refund or exchange, and status.
-- Approve or reject a waiting request. The customer is emailed the decision. An approved refund returns the stock and, for a Razorpay payment, sends the refund. An approved exchange is emailed and left for staff to fulfil. A rejection puts the order back to Delivered.
+- Approve or reject a waiting request. The customer gets an email and a WhatsApp of the decision. An approved refund returns the stock and, for a Razorpay payment, sends the refund. An approved exchange is sent the same way and left for staff to fulfil. A rejection puts the order back to Delivered.
 - Export the list.
 - Open the related order.
 
@@ -348,7 +352,7 @@ This is the story to walk a client through.
 2. They search or filter, open a piece, check size and PIN, and add it to the bag.
 3. They apply a coupon, see shipping, and check out.
 4. They pay by UPI, card, or net banking, or choose cash on delivery when it is allowed.
-5. They receive an order email and can follow Confirmed → Packed → Shipped → Out for delivery → Delivered.
+5. They receive an order email and a WhatsApp on the checkout mobile, and can follow Confirmed → Packed → Shipped → Out for delivery → Delivered.
 6. They can cancel before the order ships, and they can ask for a return or exchange after it arrives.
 7. They can download the invoice, review the piece, and sign out.
 
@@ -356,7 +360,7 @@ Staff, on the other side, see the order the moment it is placed, move it through
 
 ---
 
-## 5. Emails the site sends
+## 5. Emails and WhatsApp the site sends
 
 When mail is configured, Earthen sends:
 
@@ -365,14 +369,37 @@ When mail is configured, Earthen sends:
 - Order confirmed, packed, shipped, out for delivery, delivered, and cancelled.
 - Return requested, return approved, exchange approved, return declined, and returned.
 
+When WhatsApp is configured, the same order events also go to the mobile on the order. A forgotten password can also send a 6-digit code to the mobile on the account. Sign-in can send a separate 6-digit code to that same mobile. A signed-in customer who leaves pieces in the bag, or on the wishlist without ordering them, gets one WhatsApp an hour later on the account mobile. Back-in-stock stays email only. A missing token, a mobile that is not 10 digits, or a rejected template is logged, and the order still completes. The confirmed message names the pieces, the total, and how it was paid. The shipped message adds the courier and tracking number. The others name the order and the new status. None of them include a link to the order page.
+
+These are utility templates in WhatsApp Manager, language English (`en`). The code sends these exact names. Create and approve them before a live phone can receive a message.
+
+- `earthen_order_confirmed` — Hi {{1}}, your Earthen order {{2}} is confirmed. {{3}} Total {{4}}. {{5}}.
+- `earthen_order_packed` — Hi {{1}}, your Earthen order {{2}} is packed and will leave the studio in Bengaluru shortly.
+- `earthen_order_shipped` — Hi {{1}}, your Earthen order {{2}} has shipped with {{3}}. Tracking number {{4}}.
+- `earthen_order_out` — Hi {{1}}, your Earthen order {{2}} is out for delivery.
+- `earthen_order_delivered` — Hi {{1}}, your Earthen order {{2}} was delivered. You can ask for a return or exchange from your order while the return window is open.
+- `earthen_order_cancelled` — Hi {{1}}, your Earthen order {{2}} was cancelled. {{3}}.
+- `earthen_return_requested` — Hi {{1}}, we have your return request for Earthen order {{2}}. We will write again when it is decided.
+- `earthen_return_approved` — Hi {{1}}, your return for Earthen order {{2}} was approved. The refund goes back to the original payment method.
+- `earthen_exchange_approved` — Hi {{1}}, your exchange for Earthen order {{2}} was approved. We will send the replacement from the studio.
+- `earthen_return_declined` — Hi {{1}}, your return for Earthen order {{2}} was declined. The order stays with you. Write to hello@earthen.in if this is a mistake.
+- `earthen_order_returned` — Hi {{1}}, your Earthen order {{2}} was marked returned.
+- `earthen_password_otp` — Your Earthen password code is {{1}}. It expires in 10 minutes. If you did not ask for it, you can ignore this message.
+- `earthen_sign_in_otp` — Your Earthen sign-in code is {{1}}. It expires in 10 minutes. If you did not ask for it, you can ignore this message.
+- `earthen_cart_waiting` — Hi {{1}}, you still have {{2}} in your Earthen bag. Total {{3}}. Checkout when you are ready.
+- `earthen_wishlist_waiting` — Hi {{1}}, {{2}} is still on your Earthen wishlist. You have not ordered these yet.
+
+On the order templates, {{1}} is the name on the address. On the bag and wishlist templates, {{1}} is the name on the account. On the password and sign-in templates, {{1}} is the 6-digit code. On the confirmed template, {{3}} is one line of pieces, such as `Olive overshirt, Olive, size M, ×1; Wide trouser, Sand, size 32, ×1`. {{4}} is the order total. {{5}} is the payment and the delivery speed, such as `Paid by UPI · Standard delivery`. On the bag template, {{3}} is the total of the pieces at the current price, without shipping or a coupon. On the shipped template, a missing courier or tracking number is sent as `not added yet`. On the cancelled template, {{3}} is either `Cash on delivery has nothing to refund` or `The refund goes back to the original payment method`.
+
 ---
 
 ## 6. Notes before the client meeting
 
 Say these in the room so the demo matches the build.
 
-- Customer sign-in is email and password. The create-account page says one-time-password sign-in is planned and is not part of this build.
-- Order update preference at checkout is SMS or WhatsApp. The messages that go out today are emails.
+- Customer sign-in is email and password, or the mobile on the account with a WhatsApp code. Creating an account still asks for email, mobile, and a password. WhatsApp sign-in reaches a phone only after `earthen_sign_in_otp` is approved. Until then the code is shown on the sign-in page.
+- A signed-in bag or wishlist that is still waiting after an hour sends one WhatsApp to the account mobile. `earthen_cart_waiting` names the pieces and the total of those pieces, without shipping or a coupon. `earthen_wishlist_waiting` names saved pieces that are not already on an order for that email, apart from a cancelled or returned order. Guest bags and wishlists are not messaged. Until WhatsApp is configured, those reminders wait and the server logs that once.
+- Every order sends a WhatsApp to the mobile on the address, and the same email as before. Checkout states that placing the order agrees to those messages. WhatsApp reaches a phone only after the utility templates above are approved and the server has a token and phone number id. Until then the order still completes, and the skip is written to the server log.
 - The contact form confirms on screen. It does not yet send that message to the studio inbox.
 - The footer mailing list confirms on screen and points the person to the code WELCOME10. It does not yet store the address in a separate mailing tool.
 - Online payment needs Razorpay keys. Without them, checkout says no payment is taken, and UPI, card, and net banking cannot take a live charge. Cash on delivery still places an order. A live Razorpay payment is refunded when that order is cancelled or a refund return is approved.

@@ -117,6 +117,16 @@ export function OrderDetail({ order, confirmation = false, celebrate = false }: 
       <p className="mt-2 text-sm text-muted">
         {labelPayment(order.payment)} · {order.delivery === "express" ? "Express" : "Standard"} delivery to {order.address.city}, {order.address.pin}
       </p>
+      {order.paymentStatus === "demo" && <p className="mt-1 text-sm text-muted">Demo order: no payment was taken.</p>}
+      {order.refundStatus && (
+        <p className="mt-4 border border-line bg-paper p-4 text-sm">
+          {order.refundStatus === "refunded"
+            ? `Your refund of ${formatINR(order.total)} is complete. It can take 5–7 working days to show in your account.`
+            : order.refundStatus === "pending"
+              ? `Your refund of ${formatINR(order.total)} has started. It reaches your account in 5–7 working days.`
+              : `Your refund of ${formatINR(order.total)} is being handled by the studio. We will write to you when it is on its way.`}
+        </p>
+      )}
 
       {order.returnRequest && (
         <p className="mt-4 border border-line bg-paper p-4 text-sm">
@@ -181,7 +191,8 @@ export function Invoice({ order }: { order: Order }) {
       <div className="mt-8 text-sm">
         <p>Bill to</p>
         <p className="mt-1">{order.address.name}</p>
-        <p>{order.address.line1}, {order.address.line2}</p>
+        <p>{[order.address.line1, order.address.line2].filter(Boolean).join(", ")}</p>
+        {order.address.landmark && <p>Near {order.address.landmark}</p>}
         <p>{order.address.city}, {order.address.state} {order.address.pin}</p>
       </div>
       <table className="mt-8 w-full text-left text-sm">

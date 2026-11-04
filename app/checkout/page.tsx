@@ -7,6 +7,8 @@ import { CouponOffers } from "@/components/coupon-offers";
 import { Fold } from "@/components/fold";
 import { api } from "@/lib/api";
 import { formatINR, shippingFee } from "@/lib/money";
+import { AddressFields, addressProblem, emptyAddressDraft, type AddressDraft, type PinStatus } from "@/components/address-fields";
+import { canonicalState, offStates } from "@/lib/india";
 import { loadRazorpay, openRazorpay, type RazorpaySession } from "@/lib/razorpay";
 import { useStore, type Address, type Order } from "@/lib/store";
 
@@ -17,15 +19,6 @@ const payments: { id: Order["payment"]; label: string; hint: string }[] = [
   { id: "cod", label: "Cash on delivery", hint: "Fee and limit are set by the studio" },
 ];
 
-const emptyAddress = {
-  name: "",
-  phone: "",
-  line1: "",
-  line2: "",
-  city: "",
-  state: "Karnataka",
-  pin: "",
-};
 
 export default function CheckoutPage() {
   const store = useStore();
@@ -34,15 +27,18 @@ export default function CheckoutPage() {
   const [delivery, setDelivery] = useState<"standard" | "express">("standard");
   const [payment, setPayment] = useState<Order["payment"]>("upi");
   const [email, setEmail] = useState(store.user?.email ?? "");
-  const [form, setForm] = useState({ ...emptyAddress, name: store.user?.name ?? "", phone: store.user?.phone ?? "" });
+  const [form, setForm] = useState<AddressDraft>({ ...emptyAddressDraft, name: store.user?.name ?? "", phone: store.user?.phone ?? "" });
+  const [pinStatus, setPinStatus] = useState<PinStatus>({ state: "idle" });
   const [error, setError] = useState<string | null>(null);
-  const [pinNote, setPinNote] = useState<string | null>(null);
   const [sections, setSections] = useState({ contact: true, address: true, delivery: true, payment: true, gift: false });
   const [giftWrap, setGiftWrap] = useState(false);
   const [giftMessage, setGiftMessage] = useState("");
   const [hidePrices, setHidePrices] = useState(false);
   const [paying, setPaying] = useState(false);
-  const [gateway, setGateway] = useState(false);
+  // live: Razorpay charges online orders. demo: online orders complete without a charge. off: cash on delivery only.
+  const [mode, setMode] = useState<"live" | "demo" | "off" | null>(null);
+  const [confirming, setConfirming] = useState(false);
+  const onlineOff = mode === "off";
 
   const { subtotal, discount } = store.totals;
   const rules = store.settings;
@@ -56,14 +52,58 @@ export default function CheckoutPage() {
   const saved = store.user?.addresses ?? [];
 
   useEffect(() => {
+    if (onlineOff && payment !== "cod") setPayment("cod");
+  }, [onlineOff, payment]);
+
+  // A payment that went through but whose order could not be confirmed (connection dropped) is confirmed here,
+  // so the customer is never asked to pay twice.
+  useEffect(() => {
+    if (!store.ready) return;
+    const pending = readPending();
+    if (!pending) return;
+    let stopped = false;
+    setConfirming(true);
+    void confirmPaid(pending.input, pending.razorpay).then((result) => {
+      if (stopped) return;
+      setConfirming(false);
+      if (typeof result === "string") setError(result);
+    });
+    return () => {
+      stopped = true;
+    };
+  }, [store.ready]);
+
+  /** Places the order for a completed payment, retrying if the connection drops. The API returns the same order on a repeat. */
+  async function confirmPaid(input: PendingPayment["input"], razorpay: PendingPayment["razorpay"]) {
+    savePending({ input, razorpay });
+    let result: Awaited<ReturnType<typeof store.placeOrder>> = "";
+    for (const wait of [0, 1500, 4000]) {
+      if (wait) await new Promise((resolve) => setTimeout(resolve, wait));
+      result = await store.placeOrder({ ...input, razorpay });
+      if (typeof result !== "string" || !isNetworkError(result)) break;
+    }
+    if (typeof result === "string") {
+      if (isNetworkError(result)) {
+        return "Your payment went through, but we could not confirm the order yet. Please do not pay again: refresh this page in a minute and we will finish it.";
+      }
+      clearPending();
+      return result;
+    }
+    clearPending();
+    sessionStorage.setItem("earthen-placed", result.id);
+    router.push(`/order/${result.id}`);
+    return null;
+  }
+
+  useEffect(() => {
     if (!store.ready) return;
     let cancelled = false;
-    api<{ configured: boolean }>("/payments/status")
+    api<{ configured: boolean; mode?: "live" | "demo" | "off" }>("/payments/status")
       .then((data) => {
-        if (!cancelled) setGateway(Boolean(data.configured));
+        if (!cancelled) setMode(data.mode ?? (data.configured ? "live" : "demo"));
       })
       .catch(() => {
-        if (!cancelled) setGateway(false);
+        if (!cancelled) setMode("off");
       });
     return () => {
       cancelled = true;
@@ -80,18 +120,10 @@ export default function CheckoutPage() {
     }));
   }, [store.user]);
 
-  const states = useMemo(
-    () => ["Karnataka", "Tamil Nadu", "Telangana", "Maharashtra", "Delhi", "Kerala", "Gujarat", "West Bengal"],
-    [],
-  );
-
   function toggleSection(key: keyof typeof sections) {
     setSections((current) => ({ ...current, [key]: !current[key] }));
   }
 
-  function setField(key: keyof typeof form, value: string) {
-    setForm((current) => ({ ...current, [key]: value }));
-  }
 
   function useSaved(address: Address) {
     setForm({
@@ -99,20 +131,12 @@ export default function CheckoutPage() {
       phone: address.phone,
       line1: address.line1,
       line2: address.line2,
+      landmark: address.landmark ?? "",
       city: address.city,
-      state: address.state,
+      state: canonicalState(address.state),
       pin: address.pin,
     });
     setEmail(store.user?.email ?? email);
-  }
-
-  function checkService() {
-    if (!/^\d{6}$/.test(form.pin) || form.pin.startsWith("0") || form.pin.startsWith("9")) {
-      setPinNote("This PIN code is not serviceable yet.");
-      return false;
-    }
-    setPinNote("Delivery available to this PIN code.");
-    return true;
   }
 
   async function place(event: FormEvent) {
@@ -121,8 +145,14 @@ export default function CheckoutPage() {
       setError("Your bag is empty.");
       return;
     }
-    if (!checkService()) {
-      setError("We cannot deliver to that PIN code.");
+    const problem = addressProblem(form, pinStatus, offStates(rules), true);
+    if (problem) {
+      setError(problem);
+      setSections((current) => ({ ...current, address: true }));
+      return;
+    }
+    if (payment !== "cod" && onlineOff) {
+      setError("Online payment is not available yet. Choose cash on delivery.");
       return;
     }
     if (payment === "cod" && rules.codEnabled === false) {
@@ -175,11 +205,14 @@ export default function CheckoutPage() {
             razorpay = proof;
           }
         } catch (error) {
-          if (!(error instanceof TypeError)) {
-            setError(error instanceof Error ? error.message : "Payment could not be started.");
-            return;
-          }
+          setError(error instanceof TypeError ? "We could not reach the payment service. Check your connection and try again." : error instanceof Error ? error.message : "Payment could not be started.");
+          return;
         }
+      }
+      if (razorpay) {
+        const failure = await confirmPaid(orderInput, razorpay);
+        if (failure) setError(failure);
+        return;
       }
       const result = await store.placeOrder({ ...orderInput, razorpay });
       if (typeof result === "string") {
@@ -226,38 +259,13 @@ export default function CheckoutPage() {
               ))}
             </div>
           )}
-          <div className="mt-3 grid gap-3 sm:grid-cols-2">
-            <Field label="Full name" value={form.name} onChange={(value) => setField("name", value)} />
-            <Field label="Mobile" value={form.phone} onChange={(value) => setField("phone", value.replace(/\D/g, "").slice(0, 10))} />
-            <p className="text-sm leading-6 text-muted sm:col-span-2">
+          <div className="mt-3">
+            <AddressFields value={form} onChange={setForm} off={offStates(rules)} blockOff onStatus={setPinStatus} />
+            <p className="mt-2 text-xs text-muted">The mobile is for the courier, and for order updates by email and WhatsApp. No promotions unless you ask for them.</p>
+            <p className="text-sm leading-6 text-muted mt-3">
               We'll WhatsApp this number about the order: when it is confirmed, packed, shipped, out for delivery, and delivered, and if you cancel or return. The receipt still goes to the email above. Placing the order agrees to those messages.
             </p>
-            <Field label="Address" value={form.line1} onChange={(value) => setField("line1", value)} className="sm:col-span-2" />
-            <Field label="Area" value={form.line2} onChange={(value) => setField("line2", value)} />
-            <Field label="City" value={form.city} onChange={(value) => setField("city", value)} />
-            <label className="block text-sm">
-              State
-              <select value={form.state} onChange={(event) => setField("state", event.target.value)} className="mt-1 h-12 w-full border border-line bg-paper px-3">
-                {states.map((state) => (
-                  <option key={state}>{state}</option>
-                ))}
-              </select>
-            </label>
-            <label className="block text-sm">
-              PIN code
-              <span className="mt-1 flex gap-2">
-                <input required value={form.pin} onChange={(event) => setField("pin", event.target.value.replace(/\D/g, "").slice(0, 6))} className="h-12 w-full border border-line bg-paper px-3 outline-none" />
-                <button type="button" onClick={checkService} className="h-12 border border-ink px-3 text-xs tracking-[0.14em]">
-                  CHECK
-                </button>
-              </span>
-            </label>
           </div>
-          {pinNote && (
-            <p key={pinNote} className="note-in mt-2 text-sm text-muted">
-              {pinNote}
-            </p>
-          )}
         </Fold>
 
         <Fold title="Delivery" open={sections.delivery} onToggle={() => toggleSection("delivery")}>
@@ -310,7 +318,7 @@ export default function CheckoutPage() {
         <Fold title="Payment" open={sections.payment} onToggle={() => toggleSection("payment")}>
           <div className="mt-3 grid gap-3">
             {payments.map((option) => {
-              const disabled = option.id === "cod" && codBlocked;
+              const disabled = option.id === "cod" ? codBlocked : onlineOff;
               return (
                 <button
                   type="button"
@@ -320,7 +328,7 @@ export default function CheckoutPage() {
                   className={`border px-4 py-3 text-left ${payment === option.id ? "border-ink bg-paper" : "border-line"} disabled:opacity-40`}
                 >
                   <span className="block text-sm">{option.label}</span>
-                  <span className="text-sm text-muted">{disabled ? (rules.codEnabled === false ? "Turned off in studio settings" : `Unavailable above ${formatINR(rules.codMax)}`) : option.id === "cod" ? `${formatINR(rules.codFee)} fee · up to ${formatINR(rules.codMax)}` : option.hint}</span>
+                  <span className="text-sm text-muted">{disabled ? (option.id !== "cod" ? "Coming soon. Pay by cash on delivery for now." : rules.codEnabled === false ? "Turned off in studio settings" : `Unavailable above ${formatINR(rules.codMax)}`) : option.id === "cod" ? `${formatINR(rules.codFee)} fee · up to ${formatINR(rules.codMax)}` : option.hint}</span>
                 </button>
               );
             })}
@@ -337,13 +345,17 @@ export default function CheckoutPage() {
             {error}
           </p>
         )}
-        <button disabled={paying} className="h-12 w-full bg-terra text-sm tracking-[0.16em] text-cream disabled:opacity-60">
-          {paying ? "PLEASE WAIT" : "PLACE ORDER"}
+        {confirming && <p className="text-sm">We received your payment. Confirming your order…</p>}
+        {onlineOff && codBlocked && <p className="text-sm">This order cannot be paid for yet: online payment is coming soon and cash on delivery is not available for it.</p>}
+        <button disabled={paying || confirming || (onlineOff && codBlocked)} className="h-12 w-full bg-terra text-sm tracking-[0.16em] text-cream disabled:opacity-60">
+          {paying || confirming ? "PLEASE WAIT" : "PLACE ORDER"}
         </button>
         <p className="text-center text-xs text-muted">
-          {gateway
+          {mode === "live"
             ? "UPI, cards, and net banking are collected by Razorpay. Cash on delivery is paid to the courier."
-            : "This is a prototype. No payment is taken."}{" "}
+            : mode === "demo"
+              ? "Demo mode: online orders are placed without taking any payment."
+              : "Cash on delivery is paid to the courier. Online payment is coming soon."}{" "}
           <Link href="/cart" className="underline">
             Return to bag
           </Link>
@@ -430,4 +442,42 @@ function Choice({ selected, onClick, title, text }: { selected: boolean; onClick
       <span className="text-sm text-muted">{text}</span>
     </button>
   );
+}
+
+type PendingPayment = {
+  input: Omit<Parameters<ReturnType<typeof useStore>["placeOrder"]>[0], "razorpay">;
+  razorpay: { orderId: string; paymentId: string; signature: string };
+};
+
+const PENDING_KEY = "earthen-pending-payment";
+
+function readPending(): PendingPayment | null {
+  try {
+    const value = JSON.parse(sessionStorage.getItem(PENDING_KEY) ?? "null") as PendingPayment | null;
+    return value?.razorpay?.paymentId ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+function savePending(value: PendingPayment) {
+  try {
+    sessionStorage.setItem(PENDING_KEY, JSON.stringify(value));
+  } catch {
+    // Without storage the retries in this page still run.
+  }
+}
+
+function clearPending() {
+  try {
+    sessionStorage.removeItem(PENDING_KEY);
+  } catch {
+    // Nothing to clear.
+  }
+}
+
+// Not a definite answer: a dropped connection ("Failed to fetch" in Chrome, "NetworkError…" in Firefox, "Load failed" in Safari),
+// a server or proxy error, or Razorpay not confirming yet. The paid order is retried instead of given up.
+function isNetworkError(message: string) {
+  return /failed to fetch|networkerror|load failed|network request failed|internal server error|could not complete that|could not confirm your payment/i.test(message);
 }

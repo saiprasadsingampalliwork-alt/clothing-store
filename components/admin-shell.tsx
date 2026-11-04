@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 import { Icon } from "@/components/icons";
 import { canAccess, orderCode, paymentLabel, shortDate } from "@/lib/admin";
+import { allAudiences, allStyles, AUDIENCE_GROUPS, fabricList } from "@/lib/catalog";
 import { formatINR } from "@/lib/money";
 import { useStore, type StaffRole } from "@/lib/store";
 
@@ -12,6 +13,9 @@ const links = [
   { href: "/admin", label: "Dashboard" },
   { href: "/admin/products", label: "Products" },
   { href: "/admin/categories", label: "Categories" },
+  { href: "/admin/audiences", label: "Audiences" },
+  { href: "/admin/fabrics", label: "Fabrics" },
+  { href: "/admin/styles", label: "Styles" },
   { href: "/admin/orders", label: "Orders" },
   { href: "/admin/returns", label: "Returns" },
   { href: "/admin/customers", label: "Customers" },
@@ -228,7 +232,7 @@ export function OrdersTable({
   showDate = false,
   linked = true,
 }: {
-  orders: { id: string; number: string; createdAt?: string; address: { name: string }; items: { quantity: number }[]; total: number; payment: string; status: string }[];
+  orders: { id: string; number: string; createdAt?: string; address: { name: string }; items: { quantity: number }[]; total: number; payment: string; paymentStatus?: string; refundStatus?: string; status: string }[];
   showDate?: boolean;
   linked?: boolean;
 }) {
@@ -248,7 +252,7 @@ export function OrdersTable({
               {showDate && order.createdAt ? ` · ${shortDate(order.createdAt)}` : ""}
             </span>
             <span className="mt-1 block text-[#6d6960]">
-              {count} {count === 1 ? "item" : "items"} · {formatINR(order.total)} · {paymentLabel(order.payment)}
+              {count} {count === 1 ? "item" : "items"} · {formatINR(order.total)} · {paymentLabel(order.payment, order.paymentStatus, order.refundStatus)}
             </span>
           </>
         );
@@ -294,7 +298,7 @@ export function OrdersTable({
               <td>{order.address.name}</td>
               <td>{order.items.reduce((sum, item) => sum + item.quantity, 0)}</td>
               <td>{formatINR(order.total)}</td>
-              <td>{paymentLabel(order.payment)}</td>
+              <td>{paymentLabel(order.payment, order.paymentStatus, order.refundStatus)}</td>
               <td className="px-5 py-3">
                 <StatusPill status={order.status} />
               </td>
@@ -304,5 +308,67 @@ export function OrdersTable({
       </table>
     </div>
     </>
+  );
+}
+
+/** Audience choices grouped as Adults, Kids, Baby. Switched-off audiences stay selectable so pieces can be prepared before launch. */
+export function AudienceOptions() {
+  return (
+    <>
+      {AUDIENCE_GROUPS.map((group) => {
+        const members = allAudiences().filter((audience) => audience.group === group.id);
+        if (!members.length) return null;
+        return (
+          <optgroup key={group.id} label={group.label}>
+            {members.map((audience) => (
+              <option key={audience.slug} value={audience.slug}>
+                {audience.label}
+                {audience.active ? "" : " (not in shop yet)"}
+              </option>
+            ))}
+          </optgroup>
+        );
+      })}
+    </>
+  );
+}
+
+/** Fabric choices from Admin › Fabrics. A product's current fabric stays listed even if it is not in the list. */
+export function FabricOptions({ current }: { current: string }) {
+  const fabrics = fabricList();
+  return (
+    <>
+      {current && !fabrics.some((fabric) => fabric.label === current) && <option value={current}>{current}</option>}
+      {fabrics.map((fabric) => (
+        <option key={fabric.slug} value={fabric.label}>
+          {fabric.label}
+        </option>
+      ))}
+    </>
+  );
+}
+
+/** Style checkboxes for the product forms. Switched-off styles stay choosable so pieces can be prepared. */
+export function StyleChecks({ value, onChange }: { value: string[]; onChange: (styles: string[]) => void }) {
+  const styles = allStyles();
+  if (!styles.length) return <p className="mt-1 text-xs text-[#8a847c]">No styles yet. Add them under Styles.</p>;
+  return (
+    <span className="mt-1 flex flex-wrap gap-2">
+      {styles.map((style) => {
+        const on = value.includes(style.slug);
+        return (
+          <label key={style.slug} className={`flex cursor-pointer items-center gap-2 border px-3 py-1.5 text-sm ${on ? "border-[#2a2925] bg-[#2a2925] text-[#fbf8f4]" : "border-[#e6dfd4] bg-white"}`}>
+            <input
+              type="checkbox"
+              checked={on}
+              onChange={() => onChange(on ? value.filter((slug) => slug !== style.slug) : [...value, style.slug])}
+              className="sr-only"
+            />
+            {style.label}
+            {!style.active && <span className="text-[10px] opacity-70">off</span>}
+          </label>
+        );
+      })}
+    </span>
   );
 }

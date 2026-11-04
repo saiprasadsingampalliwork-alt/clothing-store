@@ -1,6 +1,7 @@
 import type { Silhouette } from "@/lib/studio";
 
-export type Size = "XS" | "S" | "M" | "L" | "XL";
+// Sizes come from the product's audience: XS–XL for adults, 2-3Y for kids, 0-3M for babies.
+export type Size = string;
 
 export type Colorway = {
   name: string;
@@ -15,9 +16,25 @@ export type ShopCategory = {
   blurb: string;
   image: string;
   chart: "upper" | "lower";
+  /** Position in the drawer, footer, and shop tabs. */
+  sort?: number;
 };
 
-export type Gender = "women" | "men" | "unisex";
+// The audience slug a product is for. Audiences are managed in the admin.
+export type Gender = string;
+
+export type AudienceGroup = "adults" | "kids" | "baby";
+
+export type Audience = {
+  slug: string;
+  label: string;
+  group: AudienceGroup;
+  /** Shown under every audience in the same group, like Unisex or Kids unisex. */
+  shared: boolean;
+  sizes: Size[];
+  active: boolean;
+  sort: number;
+};
 
 export type Review = {
   name: string;
@@ -49,6 +66,10 @@ export type Product = {
   /** Units available for `${colorName}|${size}`. Missing keys are out of stock. */
   stock: Record<string, number>;
   fabric: string;
+  /** Weight or detail shown after the fabric, like "160 gsm". */
+  fabricDetail?: string;
+  /** Style slugs, like casual or ethnic, managed under Admin › Styles. */
+  styles?: string[];
   origin: string;
   fit: string;
   model: { heightCm: number; size: Size };
@@ -65,11 +86,67 @@ export type Product = {
 
 export const SIZES: Size[] = ["XS", "S", "M", "L", "XL"];
 
-export const GENDERS: { id: Gender; label: string }[] = [
-  { id: "women", label: "Women" },
-  { id: "men", label: "Men" },
-  { id: "unisex", label: "Unisex" },
+export const AUDIENCE_GROUPS: { id: AudienceGroup; label: string }[] = [
+  { id: "adults", label: "Adults" },
+  { id: "kids", label: "Kids" },
+  { id: "baby", label: "Baby" },
 ];
+
+export const GROUP_SIZES: Record<AudienceGroup, Size[]> = {
+  adults: ["XS", "S", "M", "L", "XL"],
+  kids: ["2-3Y", "3-4Y", "4-5Y", "5-6Y", "7-8Y", "9-10Y", "11-12Y", "13-14Y"],
+  baby: ["0-3M", "3-6M", "6-12M", "12-18M", "18-24M"],
+};
+
+// Used until the API answers, and if it cannot be reached. Mirrors the server's defaults.
+const DEFAULT_AUDIENCES: Audience[] = [
+  { slug: "women", label: "Women", group: "adults", shared: false, sizes: GROUP_SIZES.adults, active: true, sort: 0 },
+  { slug: "men", label: "Men", group: "adults", shared: false, sizes: GROUP_SIZES.adults, active: true, sort: 1 },
+  { slug: "unisex", label: "Unisex", group: "adults", shared: true, sizes: GROUP_SIZES.adults, active: true, sort: 2 },
+];
+
+let installedAudiences: Audience[] | null = null;
+
+/** Every audience, including switched-off ones (staff only receive those). */
+export function allAudiences() {
+  return installedAudiences ?? DEFAULT_AUDIENCES;
+}
+
+/** Audiences shoppers can browse. */
+export function audienceList() {
+  return allAudiences().filter((audience) => audience.active);
+}
+
+export function audienceOf(slug: string) {
+  return allAudiences().find((audience) => audience.slug === slug);
+}
+
+export function audienceLabel(slug: string) {
+  return audienceOf(slug)?.label ?? slug.replace(/-/g, " ").replace(/^\w/, (letter) => letter.toUpperCase());
+}
+
+export function installAudiences(rows: Audience[] | undefined) {
+  installedAudiences = rows?.length ? [...rows].sort((left, right) => left.sort - right.sort) : null;
+}
+
+export function rememberAudience(audience: Audience) {
+  const list = allAudiences();
+  const index = list.findIndex((entry) => entry.slug === audience.slug);
+  installedAudiences = (index >= 0 ? list.map((entry) => (entry.slug === audience.slug ? audience : entry)) : [...list, audience]).sort((left, right) => left.sort - right.sort);
+}
+
+export function forgetAudience(slug: string) {
+  installedAudiences = allAudiences().filter((entry) => entry.slug !== slug);
+}
+
+/** Selected audiences also include the shared pieces of their own group: Girls shows Kids unisex, never adult Unisex. */
+export function audienceMatcher(selected: string[]) {
+  if (!selected.length) return () => true;
+  const chosen = new Set(selected);
+  const groups = new Set(allAudiences().filter((audience) => chosen.has(audience.slug)).map((audience) => audience.group));
+  const shared = new Set(allAudiences().filter((audience) => audience.shared && groups.has(audience.group)).map((audience) => audience.slug));
+  return (gender: string) => chosen.has(gender) || shared.has(gender);
+}
 
 const genderBySlug: Partial<Record<string, Gender>> = {
   "sleeveless-tank": "women",
@@ -85,7 +162,7 @@ const genderBySlug: Partial<Record<string, Gender>> = {
 };
 
 export function productGender(product: Pick<Product, "slug" | "silhouette"> & { gender?: string }): Gender {
-  if (product.gender === "women" || product.gender === "men" || product.gender === "unisex") return product.gender;
+  if (product.gender) return product.gender;
   if (product.silhouette === "skirt") return "women";
   return genderBySlug[product.slug] ?? "unisex";
 }
@@ -135,28 +212,37 @@ export function shopEntrances() {
   return [NEW_IN, ...categoryList()];
 }
 
-export function installCategories(rows: Array<{ slug: string; label: string; blurb?: string; image?: string; chart?: string }> | undefined) {
+export function installCategories(rows: Array<{ slug: string; label: string; blurb?: string; image?: string; chart?: string; sort?: number }> | undefined) {
   installedCategories = rows?.length ? rows.map(asShopCategory) : null;
 }
 
-export function rememberCategory(category: { slug: string; label: string; blurb?: string; image?: string; chart?: string }) {
+export function rememberCategory(category: { slug: string; label: string; blurb?: string; image?: string; chart?: string; sort?: number }) {
   const next = asShopCategory(category);
   const list = categoryList();
   const index = list.findIndex((entry) => entry.slug === next.slug);
   installedCategories = index >= 0 ? list.map((entry) => (entry.slug === next.slug ? next : entry)) : [...list, next];
 }
 
+/** Puts the categories in the given order, as saved under Admin › Categories. */
+export function orderCategories(slugs: string[]) {
+  const rank = new Map(slugs.map((slug, index) => [slug, index]));
+  installedCategories = [...categoryList()]
+    .sort((left, right) => (rank.get(left.slug) ?? slugs.length) - (rank.get(right.slug) ?? slugs.length))
+    .map((entry) => ({ ...entry, sort: rank.get(entry.slug) ?? entry.sort }));
+}
+
 export function forgetCategory(slug: string) {
   installedCategories = categoryList().filter((entry) => entry.slug !== slug);
 }
 
-function asShopCategory(category: { slug: string; label: string; blurb?: string; image?: string; chart?: string }): ShopCategory {
+function asShopCategory(category: { slug: string; label: string; blurb?: string; image?: string; chart?: string; sort?: number }): ShopCategory {
   return {
     slug: category.slug,
     label: category.label,
     blurb: category.blurb ?? "",
     image: category.image ?? "",
     chart: category.chart === "lower" ? "lower" : "upper",
+    sort: category.sort,
   };
 }
 
@@ -577,6 +663,79 @@ export function liveProduct(product: Product, override?: ProductOverride): LiveP
   };
 }
 
+export type Style = { slug: string; label: string; active: boolean; sort: number };
+
+let installedStyles: Style[] = [];
+
+/** Every style, including switched-off ones (staff only receive those). */
+export function allStyles() {
+  return installedStyles;
+}
+
+/** Styles shoppers can filter by. */
+export function styleList() {
+  return installedStyles.filter((style) => style.active);
+}
+
+export function styleLabel(slug: string) {
+  return installedStyles.find((style) => style.slug === slug)?.label ?? slug.replace(/-/g, " ").replace(/^\w/, (letter) => letter.toUpperCase());
+}
+
+export function installStyles(rows: Style[] | undefined) {
+  installedStyles = sortStyles(rows ?? []);
+}
+
+export function rememberStyle(style: Style) {
+  installedStyles = sortStyles([...installedStyles.filter((entry) => entry.slug !== style.slug), style]);
+}
+
+export function forgetStyle(slug: string) {
+  installedStyles = installedStyles.filter((entry) => entry.slug !== slug);
+}
+
+export function orderStyles(slugs: string[]) {
+  const rank = new Map(slugs.map((slug, index) => [slug, index]));
+  installedStyles = sortStyles(installedStyles.map((style) => ({ ...style, sort: rank.get(style.slug) ?? style.sort })));
+}
+
+function sortStyles(rows: Style[]) {
+  return [...rows].sort((left, right) => left.sort - right.sort || left.label.localeCompare(right.label));
+}
+
+export type Fabric = { slug: string; label: string };
+
+let installedFabrics: Fabric[] = [];
+
+/** Fabrics staff choose from on products, managed under Admin › Fabrics. */
+export function fabricList() {
+  return installedFabrics;
+}
+
+export function installFabrics(rows: Fabric[] | undefined) {
+  installedFabrics = sortFabrics(rows ?? []);
+}
+
+export function rememberFabric(fabric: Fabric, previousLabel?: string) {
+  installedFabrics = sortFabrics([...installedFabrics.filter((entry) => entry.slug !== fabric.slug), fabric]);
+  // A rename also renames the fabric on every product, as the API does.
+  if (previousLabel && previousLabel !== fabric.label && source) {
+    source = source.map((product) => (product.fabric === previousLabel ? { ...product, fabric: fabric.label } : product));
+  }
+}
+
+export function forgetFabric(slug: string) {
+  installedFabrics = installedFabrics.filter((entry) => entry.slug !== slug);
+}
+
+function sortFabrics(rows: Fabric[]) {
+  return [...rows].sort((left, right) => left.label.localeCompare(right.label));
+}
+
+/** "Washed linen, 160 gsm": the fabric with its weight, as shoppers see it. */
+export function fabricText(product: Pick<Product, "fabric" | "fabricDetail">) {
+  return product.fabricDetail ? `${product.fabric}, ${product.fabricDetail}` : product.fabric;
+}
+
 export type ApiProduct = {
   slug: string;
   name: string;
@@ -584,6 +743,8 @@ export type ApiProduct = {
   category: string;
   gender?: string;
   fabric: string;
+  fabricDetail?: string;
+  styles?: unknown;
   description: string;
   details: unknown;
   care: unknown;
@@ -607,8 +768,45 @@ export function catalogSource() {
   return source ?? products;
 }
 
+// True once the live catalog has come from the API, so a missing slug really is not in the shop.
+export function catalogLoaded() {
+  return source !== null;
+}
+
+// Drafts, archived pieces, and pieces for a switched-off audience stay out of every shopper-facing list.
+export function onSale(slug: string, overrides: Record<string, ProductOverride | undefined>) {
+  if ((overrides[slug]?.status ?? "active") !== "active") return false;
+  const product = getProduct(slug);
+  const audience = product ? audienceOf(productGender(product)) : undefined;
+  return !audience || audience.active;
+}
+
+/** A stand-in photo for an audience's homepage tile: its first product with a real photo. */
+export function audiencePhoto(slug: string) {
+  const label = audienceLabel(slug);
+  for (const product of catalogSource()) {
+    if (productGender(product) !== slug) continue;
+    const photo = product.photos?.find((item) => item.src && item.src !== PLACEHOLDER_IMAGE);
+    if (photo) return { src: photo.src, alt: `${label}: ${product.name}` };
+  }
+  return { src: PLACEHOLDER_IMAGE, alt: `${label}. Photo to be added.` };
+}
+
+/** "XS, S, M" or "2-3Y, 3-4Y" into a clean list, keeping the order given and dropping repeats. */
+export function parseSizes(value: string) {
+  const seen = new Set<string>();
+  return value
+    .split(",")
+    .map((size) => size.replace(/\|/g, "").trim().replace(/\s+/g, " ").slice(0, 12))
+    .filter((size) => size && !seen.has(size.toLowerCase()) && seen.add(size.toLowerCase()));
+}
+
 export function rememberProduct(product: Product) {
   source = [...catalogSource().filter((entry) => entry.slug !== product.slug), product];
+}
+
+export function forgetProduct(slug: string) {
+  source = catalogSource().filter((entry) => entry.slug !== slug);
 }
 
 export function installCatalog(rows: ApiProduct[] | undefined) {
@@ -624,7 +822,7 @@ function storedPhotos(value: unknown): ProductPhoto[] {
   return value.flatMap((item) => {
     if (!item || typeof item !== "object") return [];
     const src = String((item as ProductPhoto).src ?? "").trim();
-    if ((!src.startsWith("/photos/") && !src.startsWith("/uploads/")) || src.includes("..")) return [];
+    if (!isPhotoSrc(src)) return [];
     return [{
       id: String((item as ProductPhoto).id ?? "photo"),
       label: String((item as ProductPhoto).label ?? "Photo"),
@@ -645,12 +843,14 @@ export function toProduct(row: ApiProduct): Product {
     name: row.name,
     price: row.price,
     category,
-    gender: row.gender === "women" || row.gender === "men" || row.gender === "unisex" ? row.gender : productGender({ slug: row.slug, silhouette, gender: known?.gender }),
+    gender: row.gender || productGender({ slug: row.slug, silhouette, gender: known?.gender }),
     silhouette,
     colors: (Array.isArray(row.colors) ? row.colors : known?.colors ?? []) as Colorway[],
     sizes: (Array.isArray(row.sizes) ? row.sizes : known?.sizes ?? SIZES) as Size[],
     stock: (row.stock && typeof row.stock === "object" ? row.stock : known?.stock ?? {}) as Record<string, number>,
     fabric: row.fabric || known?.fabric || "Cotton",
+    fabricDetail: row.fabric ? row.fabricDetail ?? "" : known?.fabricDetail,
+    styles: Array.isArray(row.styles) ? row.styles.map(String) : known?.styles ?? [],
     origin: row.origin || known?.origin || "Cut and sewn in Bengaluru",
     fit: row.fit || known?.fit || "Fits true to size.",
     model: (row.model as Product["model"]) || known?.model || { heightCm: 178, size: "M" },
@@ -709,6 +909,8 @@ export function filterProducts<T extends Product = Product>(options: {
   sizes?: string[];
   colors?: string[];
   genders?: string[];
+  /** Matches products with any of these styles. */
+  styles?: string[];
   min?: number;
   max?: number;
   inStock?: boolean;
@@ -717,6 +919,7 @@ export function filterProducts<T extends Product = Product>(options: {
 }): T[] {
   const query = options.query?.trim().toLowerCase() ?? "";
   const rows: T[] = options.source ? [...options.source] : (catalogSource() as T[]);
+  const matchesAudience = audienceMatcher(options.genders ?? []);
   let list = rows.filter((product) => {
     if (options.category === "new" && !product.isNew) return false;
     if (options.category && options.category !== "new" && options.category !== "all" && product.category !== options.category) {
@@ -724,19 +927,13 @@ export function filterProducts<T extends Product = Product>(options: {
     }
     const gender = productGender(product);
     if (query) {
-      const haystack = `${product.name} ${product.fabric} ${product.origin} ${product.description} ${product.category} ${gender} ${product.colors.map((color) => color.name).join(" ")}`.toLowerCase();
+      const haystack = `${product.name} ${fabricText(product)} ${product.origin} ${product.description} ${product.category} ${audienceLabel(gender)} ${audienceOf(gender)?.group ?? ""} ${(product.styles ?? []).map(styleLabel).join(" ")} ${product.colors.map((color) => color.name).join(" ")}`.toLowerCase();
       const tokens = query.split(/\s+/);
       if (!tokens.every((token) => haystack.includes(token) || close(haystack, token))) return false;
     }
-    if (options.genders?.length) {
-      const selected = new Set(options.genders);
-      const matches =
-        (selected.has("women") && (gender === "women" || gender === "unisex")) ||
-        (selected.has("men") && (gender === "men" || gender === "unisex")) ||
-        (selected.has("unisex") && gender === "unisex");
-      if (!matches) return false;
-    }
-    if (options.sizes?.length && !options.sizes.some((size) => product.sizes.includes(size as Size) && Object.entries(product.stock).some(([key, qty]) => key.endsWith(`|${size}`) && qty > 0))) {
+    if (!matchesAudience(gender)) return false;
+    if (options.styles?.length && !(product.styles ?? []).some((style) => options.styles!.includes(style))) return false;
+    if (options.sizes?.length && !options.sizes.some((size) => product.sizes.includes(size) && Object.entries(product.stock).some(([key, qty]) => key.endsWith(`|${size}`) && qty > 0))) {
       return false;
     }
     if (options.colors?.length && !product.colors.some((color) => options.colors!.includes(color.name))) return false;
@@ -768,10 +965,10 @@ function close(haystack: string, token: string) {
   });
 }
 
-export function suggestionsFor(query: string) {
+export function suggestionsFor(query: string, overrides: Record<string, ProductOverride | undefined> = {}) {
   const q = query.trim().toLowerCase();
   if (!q) return [];
-  return filterProducts({ query: q }).slice(0, 3);
+  return filterProducts({ query: q }).filter((product) => onSale(product.slug, overrides)).slice(0, 3);
 }
 
 export function relatedProducts(slug: string) {
@@ -781,4 +978,10 @@ export function relatedProducts(slug: string) {
   return list.filter((product) => product.slug !== slug && product.category === current.category).concat(
     list.filter((product) => product.slug !== slug && product.category !== current.category),
   ).slice(0, 4);
+}
+
+/** Our own photos (/photos, /uploads) or images on Cloudinary; nothing else is shown as a photo. */
+export function isPhotoSrc(src: string) {
+  if (src.includes("..")) return false;
+  return src.startsWith("/photos/") || src.startsWith("/uploads/") || /^https:\/\/res\.cloudinary\.com\/[a-z0-9_-]+\/image\/upload\/[A-Za-z0-9_.\/,-]+$/i.test(src);
 }

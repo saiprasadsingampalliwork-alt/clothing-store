@@ -5,23 +5,44 @@ import { FormEvent, useEffect, useRef, useState, type ReactNode } from "react";
 import { ProductCard } from "@/components/product-card";
 import { ProductVisual } from "@/components/product-visual";
 import { ReviewBox } from "@/components/review-box";
-import { categoryLabel, GENDERS, getProduct, liveProduct, productGender, relatedProducts, unitsAvailable, type Product } from "@/lib/catalog";
+import { catalogLoaded, categoryLabel, fabricText, audienceLabel, audienceOf, getProduct, liveProduct, onSale, productGender, relatedProducts, unitsAvailable, type Product } from "@/lib/catalog";
 import { Icon } from "@/components/icons";
 import { fitHint, sizeChart } from "@/lib/fit";
 import { formatINR } from "@/lib/money";
 import { storeSaleActive, withStoreSale } from "@/lib/sale";
 import { useStore } from "@/lib/store";
 import { useHydrated } from "@/lib/use-hydrated";
+import { Reveal } from "@/components/reveal";
+import { api } from "@/lib/api";
 
-export function ProductView({ product: initial }: { product: Product }) {
+export function ProductView({ product }: { product: Product }) {
+  const { ready, overrides, staff } = useStore();
+  if (ready) {
+    const hidden = !onSale(product.slug, overrides);
+    if ((catalogLoaded() && !getProduct(product.slug)) || (hidden && !staff)) return <p className="px-4 py-16">This piece is not in the shop.</p>;
+    if (hidden) {
+      return (
+        <>
+          <p className="bg-[#2a2925] px-4 py-2 text-center text-xs tracking-[0.08em] text-[#fbf8f4]">
+            {overrides[product.slug]?.status === "archived" ? "Archived" : "Draft"}. Only staff can see this page; shoppers are told it is not in the shop.
+          </p>
+          <ProductDetail product={product} />
+        </>
+      );
+    }
+  }
+  return <ProductDetail product={product} />;
+}
+
+function ProductDetail({ product: initial }: { product: Product }) {
   const { addToCart, toggleWishlist, wished, overrides, usualSize, noteView, askRestock, ready, settings } = useStore();
   const hydrated = useHydrated();
   const product = (ready ? getProduct(initial.slug) : undefined) ?? initial;
   const listed = liveProduct(product, hydrated ? overrides[product.slug] : undefined);
   const live = hydrated ? withStoreSale(listed, settings) : listed;
   const gender = productGender(product);
-  const genderLabel = GENDERS.find((item) => item.id === gender)?.label ?? "Unisex";
-  const [color, setColor] = useState(product.colors[0].name);
+  const genderLabel = audienceLabel(gender);
+  const [color, setColor] = useState(product.colors[0]?.name ?? "Sand");
   const [size, setSize] = useState(product.sizes.includes("M") ? "M" : product.sizes[0]);
   const picked = useRef(false);
   const [pin, setPin] = useState("");
@@ -35,11 +56,11 @@ export function ProductView({ product: initial }: { product: Product }) {
   const [restockContact, setRestockContact] = useState("");
   const [restockNote, setRestockNote] = useState<string | null>(null);
   const [landedReview, setLandedReview] = useState<string | null>(null);
-  const hex = product.colors.find((entry) => entry.name === color)?.hex ?? product.colors[0].hex;
+  const hex = product.colors.find((entry) => entry.name === color)?.hex ?? product.colors[0]?.hex ?? "#E4D7C4";
   const available = unitsAvailable(live, color, size);
   const saved = wished(product.slug);
-  const related = relatedProducts(product.slug);
-  const chart = sizeChart(product.category);
+  const related = relatedProducts(product.slug).filter((item) => onSale(item.slug, overrides));
+  const chart = sizeChart(product.category, product.sizes, audienceOf(gender)?.group);
   const hint = fitHint(product.reviews);
 
   useEffect(() => {
@@ -51,16 +72,20 @@ export function ProductView({ product: initial }: { product: Product }) {
     setSize(usualSize);
   }, [usualSize, product.sizes]);
 
-  function checkPin() {
-    if (!/^\d{6}$/.test(pin) || pin.startsWith("0")) {
+  // Asks the API: the same PIN directory and delivery areas that checkout uses.
+  async function checkPin() {
+    if (!/^[1-9]\d{5}$/.test(pin)) {
       setDelivery("Enter a 6-digit PIN code.");
       return;
     }
-    if (pin.startsWith("9")) {
-      setDelivery("We do not deliver to this PIN code yet.");
-      return;
+    try {
+      const info = await api<{ district: string; states: string[]; delivers: boolean; estimate: string; cod: boolean }>(`/delivery/pincode/${pin}`);
+      const where = `${info.district}, ${info.states.join(" / ")}`;
+      setDelivery(info.delivers ? `${where} · Delivery in ${info.estimate}${info.cod ? " · Cash on delivery available" : ""}` : `${where} · We don't deliver here yet`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "";
+      setDelivery(message.startsWith("We could not find") ? "We could not find that PIN code. Check the number." : message || "We could not check that PIN code. Try again.");
     }
-    setDelivery("Delivery in 3–5 days · Cash on delivery available");
   }
 
   function add() {
@@ -216,7 +241,7 @@ export function ProductView({ product: initial }: { product: Product }) {
                 aria-label="PIN code"
                 inputMode="numeric"
               />
-              <button onClick={checkPin} className="h-11 border border-ink px-4 text-xs tracking-[0.14em]">
+              <button onClick={() => void checkPin()} className="h-11 border border-ink px-4 text-xs tracking-[0.14em]">
                 CHECK
               </button>
             </div>
@@ -249,7 +274,7 @@ export function ProductView({ product: initial }: { product: Product }) {
               </ul>
             </Accordion>
             <Accordion title="Fabric and care" open={open === "care"} onToggle={() => setOpen(open === "care" ? null : "care")}>
-              <p>{product.fabric}</p>
+              <p>{fabricText(product)}</p>
               <ul className="mt-2 list-disc pl-4">
                 {product.care.map((item) => (
                   <li key={item}>{item}</li>
@@ -288,11 +313,11 @@ export function ProductView({ product: initial }: { product: Product }) {
 
       <section className="mt-16">
         <h2 className="serif text-3xl">You may also like</h2>
-        <div className="reveal mt-8 grid grid-cols-1 gap-x-6 gap-y-12 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+        <Reveal className="mt-8 grid grid-cols-1 gap-x-6 gap-y-12 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {related.map((item) => (
             <ProductCard key={item.slug} product={item} />
           ))}
-        </div>
+        </Reveal>
       </section>
 
       {guide && (
@@ -304,7 +329,7 @@ export function ProductView({ product: initial }: { product: Product }) {
             </div>
             <p className="mt-3 text-sm leading-6 text-muted">
               {chart.caption} {product.fit}
-              {gender === "unisex" ? " One chart for everyone who wears this cut." : ""}
+              {audienceOf(gender)?.shared ? " One chart for everyone who wears this cut." : ""}
             </p>
             <table className="mt-4 w-full text-left text-sm">
               <thead>
@@ -319,8 +344,8 @@ export function ProductView({ product: initial }: { product: Product }) {
               <tbody>
                 {chart.rows.map((row) => (
                   <tr key={row[0]} className="border-b border-line">
-                    {row.map((cell) => (
-                      <td key={cell} className="py-2">
+                    {row.map((cell, index) => (
+                      <td key={index} className="py-2">
                         {cell}
                       </td>
                     ))}
@@ -345,8 +370,10 @@ export function ProductView({ product: initial }: { product: Product }) {
 }
 
 function wearingNote(product: Product) {
+  // Children's pieces have no studio model; only the fit note applies.
+  if (!product.shot && !product.model.heightCm) return product.fit;
   const model = product.shot ?? `Model is ${product.model.heightCm} cm and wears size ${product.model.size}.`;
-  if (productGender(product) !== "unisex") return `${model} ${product.fit}`;
+  if (!audienceOf(productGender(product))?.shared || audienceOf(productGender(product))?.group !== "adults") return `${model} ${product.fit}`;
   const worn = product.reviews.filter((review) => review.heightCm >= 120 && review.size).sort((left, right) => left.heightCm - right.heightCm);
   const low = worn[0];
   const high = worn[worn.length - 1];

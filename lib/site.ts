@@ -1,9 +1,11 @@
+import { isPhotoSrc } from "./catalog";
 import { brand } from "./brand";
 
 export type SiteImage = { src: string; alt: string };
 
+// The homepage tile for an audience (Women, Girls, Baby…), keyed by the audience slug.
 export type SiteAudience = {
-  id: "women" | "men" | "unisex";
+  id: string;
   text: string;
   image: SiteImage;
 };
@@ -48,7 +50,6 @@ export const defaultSiteContent: SiteContent = {
   seasonText: "Linen, heavy cotton, and wool, cut in small runs and folded on the shelf.",
 };
 
-const audienceIds = ["women", "men", "unisex"] as const;
 
 export function phoneHref(phone: string) {
   const digits = phone.replace(/[^\d+]/g, "");
@@ -57,13 +58,18 @@ export function phoneHref(phone: string) {
 
 export function siteContent(settings: { content?: unknown } | null | undefined): SiteContent {
   const raw = settings?.content && typeof settings.content === "object" ? (settings.content as Partial<SiteContent>) : {};
-  const audiences = audienceIds.map((id) => {
-    const fallback = defaultSiteContent.audiences.find((item) => item.id === id)!;
-    const saved = Array.isArray(raw.audiences) ? raw.audiences.find((item) => item?.id === id) : undefined;
+  // Saved tiles for any audience, with the original three always present.
+  const savedTiles = (Array.isArray(raw.audiences) ? raw.audiences : []).filter(
+    (item): item is SiteAudience => Boolean(item) && typeof item.id === "string" && /^[a-z0-9-]{1,40}$/.test(item.id),
+  );
+  const ids = [...new Set([...defaultSiteContent.audiences.map((item) => item.id), ...savedTiles.map((item) => item.id)])].slice(0, 30);
+  const audiences = ids.map((id) => {
+    const fallback = defaultSiteContent.audiences.find((item) => item.id === id);
+    const saved = savedTiles.find((item) => item.id === id);
     return {
       id,
-      text: text(saved?.text, fallback.text, 120),
-      image: image(saved?.image, fallback.image),
+      text: text(saved?.text, fallback?.text ?? "", 120),
+      image: image(saved?.image, fallback?.image ?? { src: "", alt: "" }),
     };
   });
   const hero = Array.isArray(raw.hero) ? raw.hero.map((item, index) => image(item, defaultSiteContent.hero[index] ?? defaultSiteContent.hero[0])).slice(0, 6) : [];
@@ -98,6 +104,25 @@ function image(value: unknown, fallback: SiteImage): SiteImage {
   if (!value || typeof value !== "object") return fallback;
   const src = String((value as SiteImage).src ?? "").trim();
   const alt = String((value as SiteImage).alt ?? "").trim().slice(0, 180);
-  if ((!src.startsWith("/photos/") && !src.startsWith("/uploads/")) || src.includes("..")) return fallback;
+  if (!isPhotoSrc(src)) return fallback;
   return { src, alt: alt || fallback.alt };
+}
+
+/** The tile for an audience: its saved photo and caption, or the given fallback photo and no caption. */
+export function audienceTile(content: SiteContent, id: string, fallbackImage: SiteImage): SiteAudience {
+  const saved = content.audiences.find((item) => item.id === id);
+  return {
+    id,
+    text: saved?.text ?? "",
+    image: saved?.image.src ? saved.image : fallbackImage,
+  };
+}
+
+/** Sets one audience's tile, adding it if it has none yet. */
+export function withAudienceTile(content: SiteContent, id: string, patch: Partial<Omit<SiteAudience, "id">>, base: SiteAudience): SiteContent {
+  const exists = content.audiences.some((item) => item.id === id);
+  const audiences = exists
+    ? content.audiences.map((item) => (item.id === id ? { ...item, ...patch } : item))
+    : [...content.audiences, { ...base, ...patch, id }];
+  return { ...content, audiences };
 }

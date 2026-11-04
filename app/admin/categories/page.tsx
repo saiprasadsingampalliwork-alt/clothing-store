@@ -9,7 +9,7 @@ import { ImageUpload } from "@/components/image-upload";
 const blank = { slug: "", label: "", blurb: "", image: "", chart: "upper" as "upper" | "lower" };
 
 export default function CategoriesPage() {
-  const { saveCategory, removeCategory } = useStore();
+  const { saveCategory, removeCategory, reorderCategories } = useStore();
   const categories = categoryList();
   const [draft, setDraft] = useState(blank);
   const [message, setMessage] = useState<string | null>(null);
@@ -27,6 +27,16 @@ export default function CategoriesPage() {
     if (!error) setDraft(blank);
   }
 
+  // Moves a category one place in the drawer, footer, and shop tabs.
+  async function move(index: number, direction: -1 | 1) {
+    const order = categories.map((category) => category.slug);
+    const target = index + direction;
+    if (target < 0 || target >= order.length) return;
+    [order[index], order[target]] = [order[target], order[index]];
+    const error = await reorderCategories(order);
+    if (error) setMessage(error);
+  }
+
   async function remove(slug: string, label: string) {
     const error = await removeCategory(slug);
     setMessage(error ?? `${label} removed.`);
@@ -37,7 +47,8 @@ export default function CategoriesPage() {
     <div>
       <AdminHeader title="Categories" />
       <p className="mt-3 max-w-xl text-sm text-[#6d6960]">
-        Add a category here, then choose it on a product. The shop, header, and homepage use this list. New in stays a filter for pieces marked new.
+        Add a category here, then choose it on a product. The menu drawer, footer, and shop tabs list categories in this order, after New in. New in stays a
+        filter for pieces marked new.
       </p>
       {message && <p className="mt-4 text-sm text-[#6d6960]">{message}</p>}
       <form onSubmit={(event) => void save(event)} className="mt-6 grid gap-3 border border-[#e6dfd4] bg-white p-4 sm:grid-cols-2">
@@ -75,7 +86,7 @@ export default function CategoriesPage() {
       </form>
       <div className="mt-6 border border-[#e6dfd4] bg-white">
         <ul className="divide-y divide-[#efeae2] md:hidden">
-          {categories.map((category) => {
+          {categories.map((category, index) => {
             const pieces = catalogSource().filter((product) => product.category === category.slug).length;
             return (
               <li key={category.slug} className="px-4 py-4 text-sm">
@@ -87,6 +98,9 @@ export default function CategoriesPage() {
                   <button type="button" className="shrink-0 text-[#ab6446] disabled:text-[#c4bfb6]" disabled={pieces > 0} onClick={() => void remove(category.slug, category.label)}>
                     {pieces > 0 ? "In use" : "Remove"}
                   </button>
+                </span>
+                <span className="mt-2 flex gap-4 text-[#6d6960]">
+                  <MoveButtons index={index} last={categories.length - 1} onMove={(direction) => void move(index, direction)} />
                 </span>
                 <p className="mt-2 text-[#6d6960]">
                   {pieces} {pieces === 1 ? "piece" : "pieces"} · {category.chart === "lower" ? "Lower body" : "Upper body"}
@@ -102,11 +116,12 @@ export default function CategoriesPage() {
               <th className="px-5 py-3 font-medium">NAME</th>
               <th className="py-3 font-medium">PIECES</th>
               <th className="py-3 font-medium">CHART</th>
+              <th className="py-3 font-medium">ORDER</th>
               <th className="px-5 py-3 font-medium"> </th>
             </tr>
           </thead>
           <tbody>
-            {categories.map((category) => {
+            {categories.map((category, index) => {
               const pieces = catalogSource().filter((product) => product.category === category.slug).length;
               return (
                 <tr key={category.slug} className="border-b border-[#efeae2]">
@@ -118,6 +133,11 @@ export default function CategoriesPage() {
                   </td>
                   <td>{pieces}</td>
                   <td>{category.chart === "lower" ? "Lower body" : "Upper body"}</td>
+                  <td className="whitespace-nowrap text-[#6d6960]">
+                    <span className="flex gap-4">
+                      <MoveButtons index={index} last={categories.length - 1} onMove={(direction) => void move(index, direction)} />
+                    </span>
+                  </td>
                   <td className="px-5 py-3 text-right">
                     <button type="button" className="text-[#ab6446] disabled:text-[#c4bfb6]" disabled={pieces > 0} onClick={() => void remove(category.slug, category.label)}>
                       {pieces > 0 ? "In use" : "Remove"}
@@ -131,5 +151,18 @@ export default function CategoriesPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+function MoveButtons({ index, last, onMove }: { index: number; last: number; onMove: (direction: -1 | 1) => void }) {
+  return (
+    <>
+      <button type="button" className="disabled:opacity-40" disabled={index === 0} onClick={() => onMove(-1)}>
+        Earlier
+      </button>
+      <button type="button" className="disabled:opacity-40" disabled={index === last} onClick={() => onMove(1)}>
+        Later
+      </button>
+    </>
   );
 }

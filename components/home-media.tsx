@@ -1,23 +1,28 @@
 "use client";
 
 import Link from "next/link";
-import { siteContent } from "@/lib/site";
+import { audienceList, audiencePhoto } from "@/lib/catalog";
+import { audienceTile, siteContent } from "@/lib/site";
 import { useStore } from "@/lib/store";
 
-const labels = { women: "Women", men: "Men", unisex: "Unisex" };
-
+// One tile per audience in the shop, in the order set under Admin › Audiences.
 export function AudienceBand() {
   const content = siteContent(useStore().settings);
+  const audiences = audienceList();
+  const columns = audiences.length === 4 ? "sm:grid-cols-2 lg:grid-cols-4" : audiences.length <= 3 ? "sm:grid-cols-3" : "sm:grid-cols-2 lg:grid-cols-3";
   return (
     <section className="mx-auto max-w-6xl px-4 md:px-6">
-      <div className="grid gap-6 sm:grid-cols-3 sm:gap-5">
-        {content.audiences.map((audience) => (
-          <Link key={audience.id} href={`/shop?gender=${audience.id}`}>
-            <img src={audience.image.src} alt={audience.image.alt} width={768} height={1024} className="aspect-[3/4] w-full object-cover" />
-            <p className="serif mt-3 text-3xl">{labels[audience.id]}</p>
-            <p className="mt-1 text-sm text-muted">{audience.text}</p>
-          </Link>
-        ))}
+      <div className={`grid gap-6 sm:gap-5 ${columns}`}>
+        {audiences.map((audience) => {
+          const tile = audienceTile(content, audience.slug, audiencePhoto(audience.slug));
+          return (
+            <Link key={audience.slug} href={`/shop?gender=${audience.slug}`}>
+              <img src={tile.image.src} alt={tile.image.alt} width={768} height={1024} className="aspect-[3/4] w-full bg-[#efeae2] object-cover" />
+              <p className="serif mt-3 text-3xl">{audience.label}</p>
+              {tile.text && <p className="mt-1 text-sm text-muted">{tile.text}</p>}
+            </Link>
+          );
+        })}
       </div>
     </section>
   );

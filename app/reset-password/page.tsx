@@ -113,7 +113,7 @@ export default function ResetPage() {
           <p>If an account uses that email, the reset link is ready.</p>
           {previewUrl && (
             <p>
-              The mail server is not configured yet, so the link is shown here.{" "}
+              Demo mode: email is not set up, so the link is shown here.{" "}
               <a href={previewUrl} className="break-all underline">
                 Set a new password
               </a>
@@ -123,7 +123,7 @@ export default function ResetPage() {
       ) : sent ? (
         <form onSubmit={choosePasswordWithCode} className="space-y-3">
           <p className="text-sm">If an account uses that mobile, the WhatsApp code is on its way.</p>
-          {previewCode && <p className="text-sm">WhatsApp is not configured yet, so the code is shown here: {previewCode}</p>}
+          {previewCode && <p className="text-sm">Demo mode: WhatsApp is not set up, so the code is shown here: {previewCode}</p>}
           <Input label="Code" value={code} onChange={(value) => setCode(value.replace(/\D/g, "").slice(0, 6))} />
           <Input label="New password" type="password" value={password} onChange={setPassword} />
           {error && <p className="text-sm">{error}</p>}
