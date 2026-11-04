@@ -822,7 +822,7 @@ function storedPhotos(value: unknown): ProductPhoto[] {
   return value.flatMap((item) => {
     if (!item || typeof item !== "object") return [];
     const src = String((item as ProductPhoto).src ?? "").trim();
-    if ((!src.startsWith("/photos/") && !src.startsWith("/uploads/")) || src.includes("..")) return [];
+    if (!isPhotoSrc(src)) return [];
     return [{
       id: String((item as ProductPhoto).id ?? "photo"),
       label: String((item as ProductPhoto).label ?? "Photo"),
@@ -978,4 +978,10 @@ export function relatedProducts(slug: string) {
   return list.filter((product) => product.slug !== slug && product.category === current.category).concat(
     list.filter((product) => product.slug !== slug && product.category !== current.category),
   ).slice(0, 4);
+}
+
+/** Our own photos (/photos, /uploads) or images on Cloudinary; nothing else is shown as a photo. */
+export function isPhotoSrc(src: string) {
+  if (src.includes("..")) return false;
+  return src.startsWith("/photos/") || src.startsWith("/uploads/") || /^https:\/\/res\.cloudinary\.com\/[a-z0-9_-]+\/image\/upload\/[A-Za-z0-9_.\/,-]+$/i.test(src);
 }

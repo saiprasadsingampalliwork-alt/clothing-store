@@ -1,3 +1,4 @@
+import { isPhotoSrc } from "./catalog";
 import { brand } from "./brand";
 
 export type SiteImage = { src: string; alt: string };
@@ -103,7 +104,7 @@ function image(value: unknown, fallback: SiteImage): SiteImage {
   if (!value || typeof value !== "object") return fallback;
   const src = String((value as SiteImage).src ?? "").trim();
   const alt = String((value as SiteImage).alt ?? "").trim().slice(0, 180);
-  if ((!src.startsWith("/photos/") && !src.startsWith("/uploads/")) || src.includes("..")) return fallback;
+  if (!isPhotoSrc(src)) return fallback;
   return { src, alt: alt || fallback.alt };
 }
 
