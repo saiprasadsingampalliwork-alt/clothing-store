@@ -3,16 +3,10 @@
 import Link from "next/link";
 import { FormEvent, useState } from "react";
 import { brand } from "@/lib/brand";
-import { shopEntrances } from "@/lib/catalog";
+import { audienceList, shopEntrances } from "@/lib/catalog";
 import { phoneHref, siteContent } from "@/lib/site";
 import { Icon } from "@/components/icons";
 import { useStore } from "@/lib/store";
-
-const audiences = [
-  { href: "/shop?gender=women", label: "Women" },
-  { href: "/shop?gender=men", label: "Men" },
-  { href: "/shop?gender=unisex", label: "Unisex" },
-];
 
 const help = [
   { href: "/help", label: "Help centre" },
@@ -30,7 +24,10 @@ const company = [
 export function Footer() {
   const { recent, settings } = useStore();
   const studio = siteContent(settings);
-  const shop = [...shopEntrances().map((category) => ({ href: `/shop?category=${category.slug}`, label: category.label })), ...audiences];
+  const shop = [
+    ...shopEntrances().map((category) => ({ href: `/shop?category=${category.slug}`, label: category.label })),
+    ...audienceList().map((audience) => ({ href: `/shop?gender=${audience.slug}`, label: audience.label })),
+  ];
   const [email, setEmail] = useState("");
   const [joined, setJoined] = useState(false);
   const showList = recent.length > 0;

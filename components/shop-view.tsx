@@ -4,10 +4,11 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState, type ReactNode } from "react";
 import { ProductCard } from "@/components/product-card";
-import { catalogSource, categoryLabel, filterProducts, GENDERS, liveProduct, popularSearches, products, SIZES } from "@/lib/catalog";
+import { allAudiences, catalogSource, onSale, styleLabel, styleList, categoryLabel, filterProducts, audienceLabel, audienceList, liveProduct, popularSearches, products } from "@/lib/catalog";
 import { withStoreSale } from "@/lib/sale";
 import { useStore } from "@/lib/store";
 import { useHydrated } from "@/lib/use-hydrated";
+import { Reveal } from "@/components/reveal";
 
 const PAGE_SIZE = 20;
 
@@ -33,10 +34,13 @@ export function ShopView({ path = "/shop" }: { path?: string }) {
   const sizes = params.getAll("size");
   const colors = params.getAll("color");
   const genders = params.getAll("gender");
+  const styles = params.getAll("style");
   const inStock = params.get("stock") === "1";
   const min = params.get("min") ? Number(params.get("min")) : undefined;
   const max = params.get("max") ? Number(params.get("max")) : undefined;
 
+  // Every size on sale, in audience order: adults XS–XL, then kids, then baby.
+  const sizeOptions = sizeOrder(catalog.flatMap((product) => product.sizes));
   const colorOptions = [...new Set(catalog.flatMap((product) => product.colors.map((color) => color.name)))];
 
   const originals = new Map(catalog.map((product) => [product.slug, product]));
@@ -44,17 +48,18 @@ export function ShopView({ path = "/shop" }: { path?: string }) {
     const listed = liveProduct(product, hydrated ? overrides[product.slug] : undefined);
     return hydrated ? withStoreSale(listed, settings) : listed;
   });
-  const list = filterProducts({ category, query, sort, sizes, colors, genders, inStock, min, max, source: selling }).filter(
-    (product) => product.status === "active",
+  const list = filterProducts({ category, query, sort, sizes, colors, genders, styles, inStock, min, max, source: selling }).filter(
+    (product) => onSale(product.slug, overrides),
   );
   const pages = Math.max(1, Math.ceil(list.length / PAGE_SIZE));
   const requested = Number(params.get("page")) || 1;
   const current = Math.min(Math.max(1, requested), pages);
   const start = (current - 1) * PAGE_SIZE;
   const visible = list.slice(start, start + PAGE_SIZE);
-  const audience = genders.length === 1 ? GENDERS.find((item) => item.id === genders[0])?.label : undefined;
+  const audience = genders.length === 1 ? audienceLabel(genders[0]) : undefined;
   const categoryTitle = category === "all" ? "All clothing" : categoryLabel(category);
-  const title = isSearch ? "Search" : audience && category === "all" ? audience : categoryTitle;
+  const styleTitle = styles.length === 1 ? styleLabel(styles[0]) : undefined;
+  const title = isSearch ? "Search" : audience && category === "all" ? audience : styleTitle && category === "all" ? styleTitle : categoryTitle;
 
   function update(next: URLSearchParams, keepPage = false) {
     if (!keepPage) next.delete("page");
@@ -91,7 +96,8 @@ export function ShopView({ path = "/shop" }: { path?: string }) {
   const chips = [
     ...sizes.map((size) => ({ key: "size", value: size, label: size })),
     ...colors.map((color) => ({ key: "color", value: color, label: color })),
-    ...genders.map((gender) => ({ key: "gender", value: gender, label: GENDERS.find((item) => item.id === gender)?.label ?? gender })),
+    ...genders.map((gender) => ({ key: "gender", value: gender, label: audienceLabel(gender) })),
+    ...styles.map((style) => ({ key: "style", value: style, label: styleLabel(style) })),
     ...(inStock ? [{ key: "stock", value: "1", label: "In stock" }] : []),
   ];
 
@@ -105,8 +111,7 @@ export function ShopView({ path = "/shop" }: { path?: string }) {
           <h1 className="serif text-4xl">{title}</h1>
           <p className="mt-1 text-sm text-muted">
             {isSearch ? (query ? `${list.length} results for “${query}”` : "Try one of these, or type a word in the search bar.") : `${list.length} pieces`}
-            {genders.some((gender) => gender === "women" || gender === "men") ? " Including unisex pieces." : ""}
-            {genders.length > 0 && genders.every((gender) => gender === "unisex") ? " Only the shared cuts." : ""}
+            {sharedNote(genders)}
           </p>
         </div>
         <div className="flex items-center gap-3 text-sm">
@@ -143,7 +148,9 @@ export function ShopView({ path = "/shop" }: { path?: string }) {
           sizes={sizes}
           colors={colors}
           genders={genders}
+          styles={styles}
           colorOptions={colorOptions}
+          sizeOptions={sizeOptions}
           inStock={inStock}
           sort={sort}
           onToggle={toggle}
@@ -162,8 +169,8 @@ export function ShopView({ path = "/shop" }: { path?: string }) {
         <div className="mt-6">
           <p className="eyebrow text-muted">Shop by</p>
           <div className="mt-3 flex flex-wrap gap-2">
-            {GENDERS.map((gender) => (
-              <Link key={gender.id} href={`/shop?gender=${gender.id}`} className="border border-line px-3 py-2 text-sm">
+            {audienceList().map((gender) => (
+              <Link key={gender.slug} href={`/shop?gender=${gender.slug}`} className="border border-line px-3 py-2 text-sm">
                 {gender.label}
               </Link>
             ))}
@@ -197,7 +204,7 @@ export function ShopView({ path = "/shop" }: { path?: string }) {
 
       {browsing && (
       <div>
-        <div key={`${category}-${query}-${sort}-${current}`} className="reveal mt-8 grid grid-cols-1 gap-x-6 gap-y-12 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+        <Reveal key={`${category}-${query}-${sort}-${current}`} className="mt-8 grid grid-cols-1 gap-x-6 gap-y-12 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {visible.map((product) => (
             <ProductCard key={product.slug} product={originals.get(product.slug) ?? product} />
           ))}
@@ -206,7 +213,7 @@ export function ShopView({ path = "/shop" }: { path?: string }) {
               {isSearch && chips.length === 0 ? `Nothing matches “${query}”.` : "Nothing matches those filters. Try clearing one."}
             </p>
           )}
-        </div>
+        </Reveal>
         {pages > 1 && (
           <nav className="mt-12 flex flex-wrap items-center justify-center gap-2" aria-label="Pages">
             <button type="button" disabled={current === 1} onClick={() => setPage(current - 1)} className="h-11 border border-line px-4 text-sm disabled:opacity-40">
@@ -253,7 +260,9 @@ export function ShopView({ path = "/shop" }: { path?: string }) {
               sizes={sizes}
               colors={colors}
               genders={genders}
+              styles={styles}
               colorOptions={colorOptions}
+              sizeOptions={sizeOptions}
               inStock={inStock}
               sort={sort}
               onToggle={toggle}
@@ -287,7 +296,9 @@ function Filters({
   sizes,
   colors,
   genders,
+  styles,
   colorOptions,
+  sizeOptions,
   inStock,
   sort,
   onToggle,
@@ -299,7 +310,9 @@ function Filters({
   sizes: string[];
   colors: string[];
   genders: string[];
+  styles: string[];
   colorOptions: string[];
+  sizeOptions: string[];
   inStock: boolean;
   sort: string;
   onToggle: (key: string, value: string) => void;
@@ -307,7 +320,7 @@ function Filters({
   onSort: (value: string) => void;
   onClear: () => void;
 }) {
-  const [open, setOpen] = useState<"size" | "color" | "gender" | "stock" | null>(null);
+  const [open, setOpen] = useState<"size" | "color" | "gender" | "style" | "stock" | null>(null);
 
   if (layout === "bar") {
     return (
@@ -328,12 +341,12 @@ function Filters({
             onToggle={() => setOpen((current) => (current === "size" ? null : "size"))}
           >
             <div className="flex flex-wrap gap-2">
-              {SIZES.map((size) => (
+              {sizeOptions.map((size) => (
                 <button
                   key={size}
                   type="button"
                   onClick={() => onToggle("size", size)}
-                  className={`h-10 w-10 border ${sizes.includes(size) ? "border-ink bg-ink text-cream" : "border-line bg-paper"}`}
+                  className={`h-10 min-w-10 border px-2 ${sizes.includes(size) ? "border-ink bg-ink text-cream" : "border-line bg-paper"}`}
                 >
                   {size}
                 </button>
@@ -362,24 +375,46 @@ function Filters({
           </FilterHover>
           <FilterHover
             id="gender"
-            label={genders.length > 0 ? `Gender ${genders.length}` : "Gender"}
+            label={genders.length > 0 ? `Shop for ${genders.length}` : "Shop for"}
             open={open === "gender"}
             onOpen={() => setOpen("gender")}
             onToggle={() => setOpen((current) => (current === "gender" ? null : "gender"))}
           >
             <div className="flex flex-wrap gap-2">
-              {GENDERS.map((gender) => (
+              {audienceList().map((gender) => (
                 <button
-                  key={gender.id}
+                  key={gender.slug}
                   type="button"
-                  onClick={() => onToggle("gender", gender.id)}
-                  className={`border px-3 py-1.5 ${genders.includes(gender.id) ? "border-ink bg-ink text-cream" : "border-line bg-paper"}`}
+                  onClick={() => onToggle("gender", gender.slug)}
+                  className={`border px-3 py-1.5 ${genders.includes(gender.slug) ? "border-ink bg-ink text-cream" : "border-line bg-paper"}`}
                 >
                   {gender.label}
                 </button>
               ))}
             </div>
           </FilterHover>
+          {styleList().length > 0 && (
+            <FilterHover
+              id="style"
+              label={styles.length > 0 ? `Style ${styles.length}` : "Style"}
+              open={open === "style"}
+              onOpen={() => setOpen("style")}
+              onToggle={() => setOpen((current) => (current === "style" ? null : "style"))}
+            >
+              <div className="flex flex-wrap gap-2">
+                {styleList().map((style) => (
+                  <button
+                    key={style.slug}
+                    type="button"
+                    onClick={() => onToggle("style", style.slug)}
+                    className={`border px-3 py-1.5 ${styles.includes(style.slug) ? "border-ink bg-ink text-cream" : "border-line bg-paper"}`}
+                  >
+                    {style.label}
+                  </button>
+                ))}
+              </div>
+            </FilterHover>
+          )}
           <FilterHover
             id="stock"
             label={inStock ? "In stock · On" : "In stock"}
@@ -415,12 +450,12 @@ function Filters({
       <div>
         <p className="eyebrow text-muted">Size</p>
         <div className="mt-2 flex flex-wrap gap-2">
-          {SIZES.map((size) => (
+          {sizeOptions.map((size) => (
             <button
               key={size}
               type="button"
               onClick={() => onToggle("size", size)}
-              className={`h-10 w-10 border ${sizes.includes(size) ? "border-ink bg-ink text-cream" : "border-line"}`}
+              className={`h-10 min-w-10 border px-2 ${sizes.includes(size) ? "border-ink bg-ink text-cream" : "border-line"}`}
             >
               {size}
             </button>
@@ -443,20 +478,37 @@ function Filters({
         </div>
       </div>
       <div>
-        <p className="eyebrow text-muted">Gender</p>
+        <p className="eyebrow text-muted">Shop for</p>
         <div className="mt-2 flex flex-wrap gap-2">
-          {GENDERS.map((gender) => (
+          {audienceList().map((gender) => (
             <button
-              key={gender.id}
+              key={gender.slug}
               type="button"
-              onClick={() => onToggle("gender", gender.id)}
-              className={`border px-3 py-1.5 ${genders.includes(gender.id) ? "border-ink bg-ink text-cream" : "border-line"}`}
+              onClick={() => onToggle("gender", gender.slug)}
+              className={`border px-3 py-1.5 ${genders.includes(gender.slug) ? "border-ink bg-ink text-cream" : "border-line"}`}
             >
               {gender.label}
             </button>
           ))}
         </div>
       </div>
+      {styleList().length > 0 && (
+        <div>
+          <p className="eyebrow text-muted">Style</p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {styleList().map((style) => (
+              <button
+                key={style.slug}
+                type="button"
+                onClick={() => onToggle("style", style.slug)}
+                className={`border px-3 py-1.5 ${styles.includes(style.slug) ? "border-ink bg-ink text-cream" : "border-line"}`}
+              >
+                {style.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
       <label className="flex items-center justify-between gap-3">
         In stock only
         <input type="checkbox" checked={inStock} onChange={onStock} className="h-4 w-4" />
@@ -507,3 +559,24 @@ function FilterHover({
 }
 
 export type ShopCategory = string;
+
+// "Including Unisex pieces." when the chosen audiences pull in their group's shared cuts.
+function sharedNote(genders: string[]) {
+  if (!genders.length) return "";
+  const audiences = allAudiences();
+  const chosen = audiences.filter((audience) => genders.includes(audience.slug));
+  if (!chosen.length) return "";
+  if (chosen.every((audience) => audience.shared)) return " Only the shared cuts.";
+  const groups = new Set(chosen.filter((audience) => !audience.shared).map((audience) => audience.group));
+  const shared = audiences.filter((audience) => audience.shared && audience.active && groups.has(audience.group) && !genders.includes(audience.slug));
+  return shared.length ? ` Including ${shared.map((audience) => audience.label).join(" and ")} pieces.` : "";
+}
+
+function sizeOrder(sizes: string[]) {
+  const known = allAudiences().flatMap((audience) => audience.sizes);
+  const rank = (size: string) => {
+    const index = known.indexOf(size);
+    return index < 0 ? known.length : index;
+  };
+  return [...new Set(sizes)].sort((left, right) => rank(left) - rank(right) || left.localeCompare(right));
+}

@@ -10,7 +10,7 @@ import {
   type ReactNode,
 } from "react";
 import { api as request, customerToken, setCustomerToken, setStaffToken, staffToken } from "./api";
-import { forgetCategory, getProduct, installCatalog, installCategories, liveProduct, rememberCategory, rememberProduct, toProduct, unitsAvailable, type ApiProduct, type Product, type ProductOverride, type ShopCategory, type Size } from "./catalog";
+import { fabricList, forgetStyle, installStyles, orderCategories, orderStyles, rememberStyle, type Style, forgetAudience, forgetCategory, forgetFabric, installFabrics, rememberFabric, type Fabric, forgetProduct, getProduct, installAudiences, installCatalog, installCategories, rememberAudience, type Audience, liveProduct, rememberCategory, rememberProduct, toProduct, unitsAvailable, type ApiProduct, type Product, type ProductOverride, type ShopCategory, type Size } from "./catalog";
 import { defaultCoupons, evaluateCoupon, formatINR, shippingFee, type CouponRecord } from "./money";
 import { applyStoreSale } from "./sale";
 import type { SiteContent } from "./site";
@@ -32,6 +32,8 @@ export type Address = {
   phone: string;
   line1: string;
   line2: string;
+  /** Optional, e.g. "Near the temple". */
+  landmark?: string;
   city: string;
   state: string;
   pin: string;
@@ -44,6 +46,8 @@ export type User = {
   phone: string;
   password: string;
   addresses: Address[];
+  /** Said yes to bag and wishlist reminders on WhatsApp. */
+  whatsappOptIn?: boolean;
 };
 
 export type OrderStatus =
@@ -79,6 +83,13 @@ export type Order = {
   trackingUrl?: string;
   razorpayOrderId?: string;
   razorpayPaymentId?: string;
+  /** cod, paid (charged), demo (online order with no charge), or free (nothing to charge). */
+  paymentStatus?: "cod" | "paid" | "demo" | "free" | "";
+  /** "", pending, refunded, or failed. */
+  refundStatus?: "pending" | "refunded" | "failed" | "";
+  refundNote?: string;
+  /** Lets this browser open, cancel, or return the order without an account. */
+  accessKey?: string;
   notes?: string;
   gift?: { wrap: boolean; message: string; hidePrices: boolean };
   shipment?: { courier: string; tracking: string; createdAt: string };
@@ -125,6 +136,8 @@ export type StoreSettings = {
   salePercent: number;
   saleStart: string;
   saleEnd: string;
+  /** States and UTs the studio does not deliver to; everything else is on. */
+  disabledStates?: string[];
   content?: SiteContent;
 };
 
@@ -174,19 +187,33 @@ type Persisted = {
 const STORAGE_KEY = "earthen-store-v1";
 const GUEST_ORDERS_KEY = "earthen-guest-orders";
 
-function guestOrderIds() {
+type GuestOrder = { id: string; key: string };
+
+// Orders placed in this browser, with the access key the API needs to show them to a guest.
+function guestOrders(): GuestOrder[] {
   if (typeof window === "undefined") return [];
   try {
-    const parsed = JSON.parse(localStorage.getItem(GUEST_ORDERS_KEY) ?? "[]") as string[];
-    return Array.isArray(parsed) ? parsed : [];
+    const parsed = JSON.parse(localStorage.getItem(GUEST_ORDERS_KEY) ?? "[]") as unknown[];
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((entry): entry is GuestOrder => Boolean(entry) && typeof entry === "object" && typeof (entry as GuestOrder).id === "string" && typeof (entry as GuestOrder).key === "string");
   } catch {
     return [];
   }
 }
 
-function rememberGuestOrder(id: string) {
-  const ids = [id, ...guestOrderIds().filter((entry) => entry !== id)].slice(0, 12);
-  localStorage.setItem(GUEST_ORDERS_KEY, JSON.stringify(ids));
+function rememberGuestOrder(id: string, key: string | undefined) {
+  if (!key) return;
+  try {
+    const orders = [{ id, key }, ...guestOrders().filter((entry) => entry.id !== id)].slice(0, 12);
+    localStorage.setItem(GUEST_ORDERS_KEY, JSON.stringify(orders));
+  } catch {
+    // Storage can be unavailable (private windows); the order still exists on the server.
+  }
+}
+
+/** The header that proves this browser placed the order. */
+function orderKey(order: { accessKey?: string } | undefined): HeadersInit | undefined {
+  return order?.accessKey ? { "x-order-key": order.accessKey } : undefined;
 }
 
 const demoAddress: Address = {
@@ -433,7 +460,7 @@ type Store = Persisted & {
   noteView: (slug: string) => void;
   setUsualSize: (size: Size) => void;
   askRestock: (entry: { slug: string; color: string; size: string; contact: string }) => Promise<string | null>;
-  register: (input: { name: string; email: string; phone: string; password: string }) => Promise<string | null>;
+  register: (input: { name: string; email: string; phone: string; password: string; whatsappOptIn?: boolean }) => Promise<string | null>;
   signIn: (email: string, password: string) => Promise<string | null>;
   requestSignInCode: (phone: string) => Promise<{ error: string | null; previewCode?: string }>;
   signInWithCode: (phone: string, code: string) => Promise<string | null>;
@@ -442,7 +469,7 @@ type Store = Persisted & {
   requestPasswordCode: (phone: string) => Promise<{ error: string | null; previewCode?: string }>;
   resetPassword: (token: string, password: string) => Promise<string | null>;
   resetPasswordWithCode: (phone: string, code: string, password: string) => Promise<string | null>;
-  updateProfile: (patch: Partial<Pick<User, "name" | "phone">>) => Promise<void>;
+  updateProfile: (patch: Partial<Pick<User, "name" | "phone" | "whatsappOptIn">>) => Promise<void>;
   saveAddress: (address: Address) => Promise<void>;
   removeAddress: (id: string) => Promise<void>;
   placeOrder: (input: {
@@ -461,18 +488,28 @@ type Store = Persisted & {
   inviteStaff: (input: { name: string; email: string; role: StaffRole }) => Promise<string | null>;
   updateOrder: (id: string, patch: Partial<Pick<Order, "status" | "notes">>) => Promise<string | null>;
   createShipment: (id: string, shipment: { courier: string; tracking: string }) => Promise<string | null>;
+  retryRefund: (id: string) => Promise<string | null>;
   decideReturn: (id: string, decision: "Approved" | "Rejected") => Promise<string | null>;
   setBlocked: (email: string, blocked: boolean) => Promise<void>;
-  saveOverride: (slug: string, patch: ProductOverride & { gender?: string; category?: string; name?: string; description?: string; fabric?: string; care?: string[]; colors?: { name: string; hex: string }[]; photos?: { id: string; label: string; src: string; alt: string }[] }) => Promise<void>;
+  saveOverride: (slug: string, patch: ProductOverride & { stockBase?: Record<string, number>; sizes?: string[]; fabricDetail?: string; isNew?: boolean; styles?: string[]; gender?: string; category?: string; name?: string; description?: string; fabric?: string; care?: string[]; colors?: { name: string; hex: string }[]; photos?: { id: string; label: string; src: string; alt: string }[] }) => Promise<string | null>;
+  deleteProduct: (slug: string) => Promise<string | null>;
   saveCategory: (input: { slug?: string; label: string; blurb: string; image: string; chart: "upper" | "lower" }) => Promise<string | null>;
   removeCategory: (slug: string) => Promise<string | null>;
+  reorderCategories: (slugs: string[]) => Promise<string | null>;
+  saveAudience: (input: { slug?: string; label: string; group: string; shared: boolean; sizes: string[]; active: boolean; sort?: number }) => Promise<string | null>;
+  removeAudience: (slug: string) => Promise<string | null>;
+  saveFabric: (input: { slug?: string; label: string }) => Promise<string | null>;
+  removeFabric: (slug: string) => Promise<string | null>;
+  saveStyle: (input: { slug?: string; label: string; active: boolean }) => Promise<string | null>;
+  removeStyle: (slug: string) => Promise<string | null>;
+  reorderStyles: (slugs: string[]) => Promise<string | null>;
   saveCoupon: (coupon: CouponRecord) => Promise<string | null>;
   removeCoupon: (code: string) => Promise<void>;
   saveBanner: (banner: Banner) => Promise<void>;
   removeBanner: (id: string) => Promise<void>;
   saveSettings: (settings: StoreSettings) => Promise<void>;
   submitReview: (slug: string, input: { rating: number; text: string; fit: string; heightCm?: number }) => Promise<string | null>;
-  createProduct: (input: { name: string; price: number; category: string; gender: string; fabric: string; color: string; hex: string; silhouette: string }) => Promise<string | null>;
+  createProduct: (input: { name: string; price: number; category: string; gender: string; fabric: string; fabricDetail: string; color: string; hex: string; status: "active" | "draft"; stockEach: number; isNew: boolean; styles: string[] }) => Promise<string | null>;
   importProducts: (rows: Record<string, string>[]) => Promise<string | null>;
   totals: {
     subtotal: number;
@@ -496,10 +533,21 @@ type RemoteState = {
   user: (Omit<User, "password"> & { addresses?: Address[] }) | null;
   products?: ApiProduct[];
   categories?: ShopCategory[];
+  audiences?: Audience[];
+  fabrics?: Fabric[];
+  styles?: Style[];
   bag?: { cart: CartItem[]; wishlist: { slug: string; color: string }[] } | null;
 };
 
 let studioUp = false;
+
+function installShopData(data: RemoteState) {
+  installCatalog(data.products);
+  installCategories(data.categories);
+  installAudiences(data.audiences);
+  installFabrics(data.fabrics);
+  installStyles(data.styles);
+}
 let bagTimer: number | undefined;
 
 function queueBag(cart: CartItem[], wishlist: { slug: string; color: string }[]) {
@@ -523,9 +571,9 @@ function mergeWishlist(saved: { slug: string; color: string }[], local: { slug: 
 async function withGuestOrders(data: RemoteState): Promise<RemoteState> {
   const known = new Set((data.orders ?? []).map((order) => order.id));
   const extras = await Promise.all(
-    guestOrderIds()
-      .filter((id) => !known.has(id))
-      .map((id) => request<Order>(`/orders/${id}`).catch(() => null)),
+    guestOrders()
+      .filter((entry) => !known.has(entry.id))
+      .map((entry) => request<Order>(`/orders/${entry.id}`, { headers: { "x-order-key": entry.key } }).catch(() => null)),
   );
   return { ...data, orders: [...extras.filter((order): order is Order => Boolean(order)), ...(data.orders ?? [])] };
 }
@@ -568,8 +616,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       .then(async (data) => {
         remote.current = true;
         studioUp = true;
-        installCatalog(data.products);
-        installCategories(data.categories);
+        installShopData(data);
         const withGuest = await withGuestOrders(data);
         setState((current) => {
           const next = applyRemote(
@@ -927,7 +974,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
               }),
             });
             const saved = { ...order, gift: input.gift };
-            rememberGuestOrder(saved.id);
+            rememberGuestOrder(saved.id, saved.accessKey);
             setState((current) => {
               queueBag([], current.wishlist);
               return { ...current, orders: [saved, ...current.orders.filter((entry) => entry.id !== saved.id)], cart: [], coupon: null };
@@ -997,7 +1044,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       cancelOrder: async (id) => {
         if (remote.current) {
           try {
-            const order = await request<Order>(`/orders/${id}/cancel`, { method: "POST" });
+            const order = await request<Order>(`/orders/${id}/cancel`, { method: "POST", headers: orderKey(state.orders.find((entry) => entry.id === id)) });
             setState((current) => ({ ...current, orders: current.orders.map((entry) => (entry.id === id ? order : entry)) }));
             return null;
           } catch (error) {
@@ -1022,7 +1069,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       requestReturn: async (id, returnRequest) => {
         if (remote.current) {
           try {
-            const order = await request<Order>(`/orders/${id}/return`, { method: "POST", body: JSON.stringify(returnRequest) });
+            const order = await request<Order>(`/orders/${id}/return`, {
+              method: "POST",
+              body: JSON.stringify(returnRequest),
+              headers: orderKey(state.orders.find((entry) => entry.id === id)),
+            });
             setState((current) => ({ ...current, orders: current.orders.map((entry) => (entry.id === id ? order : entry)) }));
             return null;
           } catch (error) {
@@ -1061,6 +1112,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           });
           setStaffToken(result.token);
           const snapshot = await request<RemoteState>("/bootstrap");
+          // Staff receive drafts, archived pieces, and switched-off audiences that shoppers do not.
+          installShopData(snapshot);
+          setCatalogTick((tick) => tick + 1);
           setState((current) => applyRemote({ ...current, staff: result.staff }, snapshot));
           return null;
         } catch (error) {
@@ -1071,7 +1125,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         setStaffToken(null);
         setState((current) => ({ ...current, staff: null }));
         request<RemoteState>("/bootstrap")
-          .then((data) => withGuestOrders(data))
+          .then((data) => {
+            installShopData(data);
+            setCatalogTick((tick) => tick + 1);
+            return withGuestOrders(data);
+          })
           .then((data) => setState((current) => applyRemote({ ...current, staff: null }, data)))
           .catch(() => setState((current) => ({ ...current, staff: null })));
       },
@@ -1150,6 +1208,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         }));
         return null;
       },
+      retryRefund: async (id) => {
+        if (!remote.current) return "The studio API is not running.";
+        try {
+          const order = await request<Order>(`/orders/${id}/refund`, { method: "POST" });
+          setState((current) => ({ ...current, orders: current.orders.map((entry) => (entry.id === id ? order : entry)) }));
+          return order.refundStatus === "failed" ? order.refundNote || "The refund failed again." : null;
+        } catch (error) {
+          return error instanceof Error ? error.message : "Could not retry the refund.";
+        }
+      },
       decideReturn: async (id, decision) => {
         if (remote.current) {
           try {
@@ -1189,17 +1257,38 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       },
       saveOverride: async (slug, patch) => {
         if (remote.current) {
-          const saved = await request<{ product: ApiProduct; override: ProductOverride; category?: ShopCategory | null }>(`/catalog/${slug}`, { method: "PATCH", body: JSON.stringify(patch) });
-          if (saved.product) rememberProduct(toProduct(saved.product));
-          if (saved.category) rememberCategory(saved.category);
-          setCatalogTick((tick) => tick + 1);
-          setState((current) => ({ ...current, overrides: { ...current.overrides, [slug]: saved.override } }));
-          return;
+          try {
+            const saved = await request<{ product: ApiProduct; override: ProductOverride; category?: ShopCategory | null }>(`/catalog/${slug}`, { method: "PATCH", body: JSON.stringify(patch) });
+            if (saved.product) rememberProduct(toProduct(saved.product));
+            if (saved.category) rememberCategory(saved.category);
+            setCatalogTick((tick) => tick + 1);
+            setState((current) => ({ ...current, overrides: { ...current.overrides, [slug]: saved.override } }));
+            return null;
+          } catch (error) {
+            return error instanceof Error ? error.message : "Could not update the product.";
+          }
         }
         setState((current) => ({
           ...current,
           overrides: { ...current.overrides, [slug]: { ...current.overrides[slug], ...patch } },
         }));
+        return null;
+      },
+      deleteProduct: async (slug) => {
+        if (!remote.current) return "The studio API is not running.";
+        try {
+          await request<{ ok: boolean }>(`/catalog/${slug}`, { method: "DELETE" });
+          forgetProduct(slug);
+          setState((current) => {
+            const nextOverrides = { ...current.overrides };
+            delete nextOverrides[slug];
+            return { ...current, overrides: nextOverrides };
+          });
+          setCatalogTick((tick) => tick + 1);
+          return null;
+        } catch (error) {
+          return error instanceof Error ? error.message : "Could not delete product.";
+        }
       },
       saveCoupon: async (coupon) => {
         const code = coupon.code.trim().toUpperCase();
@@ -1279,6 +1368,101 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           return error instanceof Error ? error.message : "Could not remove the category.";
         }
       },
+      saveAudience: async (input) => {
+        if (!remote.current) return "The studio API is not running.";
+        try {
+          const saved = input.slug
+            ? await request<Audience>(`/audiences/${input.slug}`, { method: "PATCH", body: JSON.stringify(input) })
+            : await request<Audience>("/audiences", { method: "POST", body: JSON.stringify(input) });
+          rememberAudience(saved);
+          setCatalogTick((tick) => tick + 1);
+          return null;
+        } catch (error) {
+          return error instanceof Error ? error.message : "Could not save the audience.";
+        }
+      },
+      removeAudience: async (slug) => {
+        if (!remote.current) return "The studio API is not running.";
+        try {
+          await request(`/audiences/${slug}`, { method: "DELETE" });
+          forgetAudience(slug);
+          setCatalogTick((tick) => tick + 1);
+          return null;
+        } catch (error) {
+          return error instanceof Error ? error.message : "Could not remove the audience.";
+        }
+      },
+      saveFabric: async (input) => {
+        if (!remote.current) return "The studio API is not running.";
+        try {
+          const previous = input.slug ? fabricList().find((entry) => entry.slug === input.slug)?.label : undefined;
+          const saved = input.slug
+            ? await request<Fabric>(`/fabrics/${input.slug}`, { method: "PATCH", body: JSON.stringify({ label: input.label }) })
+            : await request<Fabric>("/fabrics", { method: "POST", body: JSON.stringify({ label: input.label }) });
+          rememberFabric(saved, previous);
+          setCatalogTick((tick) => tick + 1);
+          return null;
+        } catch (error) {
+          return error instanceof Error ? error.message : "Could not save the fabric.";
+        }
+      },
+      removeFabric: async (slug) => {
+        if (!remote.current) return "The studio API is not running.";
+        try {
+          await request(`/fabrics/${slug}`, { method: "DELETE" });
+          forgetFabric(slug);
+          setCatalogTick((tick) => tick + 1);
+          return null;
+        } catch (error) {
+          return error instanceof Error ? error.message : "Could not remove the fabric.";
+        }
+      },
+      saveStyle: async (input) => {
+        if (!remote.current) return "The studio API is not running.";
+        try {
+          const saved = input.slug
+            ? await request<Style>(`/styles/${input.slug}`, { method: "PATCH", body: JSON.stringify({ label: input.label, active: input.active }) })
+            : await request<Style>("/styles", { method: "POST", body: JSON.stringify({ label: input.label, active: input.active }) });
+          rememberStyle(saved);
+          setCatalogTick((tick) => tick + 1);
+          return null;
+        } catch (error) {
+          return error instanceof Error ? error.message : "Could not save the style.";
+        }
+      },
+      removeStyle: async (slug) => {
+        if (!remote.current) return "The studio API is not running.";
+        try {
+          await request(`/styles/${slug}`, { method: "DELETE" });
+          forgetStyle(slug);
+          setCatalogTick((tick) => tick + 1);
+          return null;
+        } catch (error) {
+          return error instanceof Error ? error.message : "Could not remove the style.";
+        }
+      },
+      reorderStyles: async (slugs) => {
+        if (!remote.current) return "The studio API is not running.";
+        try {
+          await request("/styles/order", { method: "PUT", body: JSON.stringify({ slugs }) });
+          orderStyles(slugs);
+          setCatalogTick((tick) => tick + 1);
+          return null;
+        } catch (error) {
+          return error instanceof Error ? error.message : "Could not save the order.";
+        }
+      },
+      reorderCategories: async (slugs) => {
+        if (!remote.current) return "The studio API is not running.";
+        try {
+          await request("/categories/order", { method: "PUT", body: JSON.stringify({ slugs }) });
+          orderCategories(slugs);
+          setCatalogTick((tick) => tick + 1);
+          return null;
+        } catch (error) {
+          return error instanceof Error ? error.message : "Could not save the order.";
+        }
+      },
       saveSettings: async (settings) => {
         if (remote.current) {
           const saved = await request<StoreSettings>("/settings", { method: "PUT", body: JSON.stringify(settings) });
@@ -1315,13 +1499,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       importProducts: async (rows) => {
         if (!remote.current) return "The studio API is not running.";
         try {
-          const result = await request<{ created: number; updated: number }>("/catalog/import", { method: "POST", body: JSON.stringify({ rows }) });
+          const result = await request<{ created: number; updated: number; skipped?: string[] }>("/catalog/import", { method: "POST", body: JSON.stringify({ rows }) });
           const snapshot = await request<RemoteState>("/bootstrap");
-          installCatalog(snapshot.products);
-          installCategories(snapshot.categories);
+          installShopData(snapshot);
           setState((current) => applyRemote(current, snapshot));
           setCatalogTick((tick) => tick + 1);
-          return `Imported ${result.created} new and updated ${result.updated}.`;
+          const skipped = result.skipped ?? [];
+          return `Imported ${result.created} new and updated ${result.updated}.${skipped.length ? ` Skipped ${skipped.length}: ${skipped.join("; ")}` : ""}`;
         } catch (error) {
           return error instanceof Error ? error.message : "Could not import the file.";
         }

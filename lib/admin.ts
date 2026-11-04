@@ -4,7 +4,7 @@ import { includedGst } from "@/lib/money";
 export function canAccess(role: StaffRole, path: string) {
   if (path === "/admin/login" || path === "/admin") return true;
   if (role === "Owner") return true;
-  const catalog = ["/admin/products", "/admin/coupons"];
+  const catalog = ["/admin/products", "/admin/fabrics", "/admin/styles", "/admin/coupons"];
   const desk = ["/admin/orders", "/admin/returns", "/admin/customers", "/admin/reports"];
   const allowed = role === "Catalog manager" ? catalog : desk;
   return allowed.some((prefix) => path === prefix || path.startsWith(`${prefix}/`));
@@ -76,14 +76,29 @@ export function orderCode(number: string) {
   return bare.startsWith("EA-") ? `#${bare}` : `#EA-${bare}`;
 }
 
-export function paymentLabel(method: string) {
+export function paymentLabel(method: string, paymentStatus?: string, refundStatus?: string) {
   const key = method.toLowerCase();
-  if (key === "upi") return "UPI · Paid";
-  if (key === "card") return "Card · Paid";
-  if (key === "cod") return "COD";
-  if (key.includes("net")) return "Net banking · Paid";
-  return method;
+  const name = key === "upi" ? "UPI" : key === "card" ? "Card" : key === "cod" ? "COD" : key.includes("net") ? "Net banking" : method;
+  if (key === "cod") return name;
+  if (refundStatus === "refunded") return `${name} · Refunded`;
+  if (refundStatus === "pending") return `${name} · Refunding`;
+  if (refundStatus === "failed") return `${name} · Refund failed`;
+  if (paymentStatus === "demo") return `${name} · Demo, not charged`;
+  if (paymentStatus === "free") return `${name} · Nothing to pay`;
+  return `${name} · Paid`;
 }
+
+/** Where an order may go next; mirrors the API. Cancelled and Returned are final. */
+export const NEXT_STATUS: Record<string, string[]> = {
+  Confirmed: ["Packed", "Shipped", "Cancelled"],
+  Packed: ["Shipped", "Cancelled"],
+  Shipped: ["Out for delivery", "Delivered"],
+  "Out for delivery": ["Delivered"],
+  Delivered: [],
+  "Return requested": [],
+  Cancelled: [],
+  Returned: [],
+};
 
 export function shortDate(iso: string) {
   return new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
@@ -100,4 +115,18 @@ export function compactINR(amount: number) {
   if (amount >= 100000) return `₹${(amount / 100000).toFixed(2)} L`;
   if (amount >= 1000) return `₹${Math.round(amount / 1000)}k`;
   return `₹${amount}`;
+}
+
+// Accepts "1499", "1,499", "₹1499" or "Rs. 1499.50" and rounds to whole rupees; anything else is not a price.
+export function parsePrice(value: string) {
+  const cleaned = value.replace(/^\s*(₹|rs\.?|inr)\s*/i, "").replace(/,/g, "").trim();
+  if (!/^\d+(\.\d{1,2})?$/.test(cleaned)) return null;
+  const price = Math.round(Number(cleaned));
+  return price > 0 ? price : null;
+}
+
+// Stock is a whole number of units, never negative.
+export function parseUnits(value: string) {
+  if (!/^\d+$/.test(value.trim())) return null;
+  return Math.min(Number(value), 9999);
 }

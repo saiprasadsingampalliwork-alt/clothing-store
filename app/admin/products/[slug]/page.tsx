@@ -1,104 +1,186 @@
 "use client";
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { FormEvent, useEffect, useState } from "react";
-import { sku } from "@/lib/admin";
-import { AdminHeader } from "@/components/admin-shell";
-import { categoryList, GENDERS, getProduct, liveProduct, productGender, stockKey, type Colorway, type Gender, type ProductOverride, type ProductPhoto, type Size } from "@/lib/catalog";
+import { parsePrice, parseUnits, sku } from "@/lib/admin";
+import { AdminHeader, AudienceOptions, FabricOptions, StyleChecks } from "@/components/admin-shell";
+import { categoryList, categorySlug, audienceOf, getProduct, parseSizes, liveProduct, productGender, stockKey, type Colorway, type Gender, type ProductOverride, type ProductPhoto, type Size } from "@/lib/catalog";
 import { ImageUpload } from "@/components/image-upload";
 import { useStore } from "@/lib/store";
 
 export default function ProductEditorPage() {
+  const router = useRouter();
   const { slug } = useParams<{ slug: string }>();
   const product = getProduct(slug);
-  const { overrides, saveOverride, ready } = useStore();
+  const { overrides, saveOverride, deleteProduct, ready } = useStore();
   const saved = overrides[slug];
   const live = product ? liveProduct(product, saved) : undefined;
-  const [price, setPrice] = useState(saved?.price ?? product?.price ?? 0);
+  const [price, setPrice] = useState(String(saved?.price ?? product?.price ?? ""));
   const [salePrice, setSalePrice] = useState(saved?.salePrice ? String(saved.salePrice) : "");
   const [saleStart, setSaleStart] = useState(saved?.saleStart ?? "");
   const [saleEnd, setSaleEnd] = useState(saved?.saleEnd ?? "");
   const [status, setStatus] = useState<ProductOverride["status"]>(saved?.status ?? "active");
+  const [isNew, setIsNew] = useState(Boolean(product?.isNew));
+  const [styles, setStyles] = useState<string[]>(product?.styles ?? []);
   const [gender, setGender] = useState<Gender>(product ? productGender(product) : "unisex");
+  const [sizeText, setSizeText] = useState((product?.sizes ?? []).join(", "));
   const [category, setCategory] = useState(product?.category ?? "tops");
   const [newCategory, setNewCategory] = useState("");
-  const [metaTitle, setMetaTitle] = useState(saved?.metaTitle ?? product?.name ?? "");
-  const [metaDescription, setMetaDescription] = useState(saved?.metaDescription ?? product?.description ?? "");
-  const [stock, setStock] = useState<Record<string, number>>(live?.stock ?? {});
+  const [metaTitle, setMetaTitle] = useState(saved?.metaTitle ?? "");
+  const [metaDescription, setMetaDescription] = useState(saved?.metaDescription ?? "");
   const [photos, setPhotos] = useState<ProductPhoto[]>(product?.photos ?? []);
   const [name, setName] = useState(product?.name ?? "");
   const [description, setDescription] = useState(product?.description ?? "");
   const [fabric, setFabric] = useState(product?.fabric ?? "");
+  const [fabricDetail, setFabricDetail] = useState(product?.fabricDetail ?? "");
   const [care, setCare] = useState((product?.care ?? []).join("\n"));
-  const [colors, setColors] = useState<Colorway[]>(product?.colors ?? []);
+  const [colors, setColors] = useState<EditColor[]>(() => withIds(product?.colors ?? []));
+  const [stock, setStock] = useState<Record<string, string>>(() => stockById(colors, live?.stock ?? {}, product?.sizes ?? []));
+  // The stock this page started from; the server refuses a save if orders have moved it since.
+  const [baseStock, setBaseStock] = useState<Record<string, number>>(live?.stock ?? {});
   const [message, setMessage] = useState<string | null>(null);
 
   useEffect(() => {
     if (!ready || !product) return;
     const current = liveProduct(product, overrides[slug]);
-    setPrice(overrides[slug]?.price ?? product.price);
+    setPrice(String(overrides[slug]?.price ?? product.price));
     setSalePrice(overrides[slug]?.salePrice ? String(overrides[slug]?.salePrice) : "");
     setSaleStart(overrides[slug]?.saleStart ?? "");
     setSaleEnd(overrides[slug]?.saleEnd ?? "");
     setStatus(overrides[slug]?.status ?? "active");
+    setIsNew(Boolean(product.isNew));
+    setStyles(product.styles ?? []);
     setGender(productGender(product));
+    setSizeText(product.sizes.join(", "));
     setCategory(product.category);
     setNewCategory("");
-    setMetaTitle(overrides[slug]?.metaTitle ?? product.name);
-    setMetaDescription(overrides[slug]?.metaDescription ?? product.description);
-    setStock(current.stock);
+    setMetaTitle(overrides[slug]?.metaTitle ?? "");
+    setMetaDescription(overrides[slug]?.metaDescription ?? "");
     setPhotos(product.photos ?? []);
     setName(product.name);
     setDescription(product.description);
     setFabric(product.fabric);
+    setFabricDetail(product.fabricDetail ?? "");
     setCare(product.care.join("\n"));
-    setColors(product.colors);
+    const loaded = withIds(product.colors);
+    setColors(loaded);
+    setStock(stockById(loaded, current.stock, product.sizes));
+    setBaseStock(current.stock);
   }, [ready, slug]);
 
   if (!ready) return null;
   if (!product || !live) return <p>Product not found.</p>;
 
+  const sizes = parseSizes(sizeText);
+  const audienceSizes = audienceOf(gender)?.sizes ?? [];
+  const sizesDiffer = sizes.join("|") !== audienceSizes.join("|");
+
   async function save(event: FormEvent) {
     event.preventDefault();
-    const nextColors = colors
-      .map((color) => ({ name: color.name.trim(), hex: color.hex }))
-      .filter((color, index, list) => color.name && list.findIndex((item) => item.name.toLowerCase() === color.name.toLowerCase()) === index);
     if (!name.trim()) {
-      setMessage("A product needs a name.");
+      setMessage("Error: A product needs a name.");
       return;
     }
-    if (!nextColors.length) {
-      setMessage("Keep at least one colour.");
+    const nextPrice = parsePrice(price);
+    if (nextPrice === null) {
+      setMessage("Error: Enter a price above zero in rupees, for example 1499.");
       return;
     }
-    await saveOverride(product!.slug, {
-      price: Number(price),
-      salePrice: salePrice ? Number(salePrice) : null,
-      saleStart,
-      saleEnd,
-      status,
-      metaTitle,
-      metaDescription,
-      stock,
-      gender,
-      category: newCategory.trim() || category,
-      photos,
-      name: name.trim(),
-      description,
-      fabric,
-      care: care.split("\n").map((line) => line.trim()).filter(Boolean),
-      colors: nextColors,
-    });
-    setMessage("Saved. The storefront uses these details.");
+    const nextSale = salePrice.trim() ? parsePrice(salePrice) : null;
+    if (salePrice.trim() && (nextSale === null || nextSale >= nextPrice)) {
+      setMessage("Error: The sale price must be a number below the regular price. Leave it empty for no sale.");
+      return;
+    }
+    if (saleStart && saleEnd && saleEnd < saleStart) {
+      setMessage("Error: The sale cannot end before it starts.");
+      return;
+    }
+    const nextCategory = category === NEW_CATEGORY ? newCategory.trim() : category;
+    if (!nextCategory) {
+      setMessage("Error: Name the new category, or pick an existing one.");
+      return;
+    }
+    const nextColors = colors.map((color) => ({ ...color, name: color.name.replace(/\|/g, "").trim() }));
+    if (nextColors.some((color) => !color.name)) {
+      setMessage("Error: Every colour needs a name.");
+      return;
+    }
+    const clash = nextColors.find((color, index) => nextColors.findIndex((item) => item.name.toLowerCase() === color.name.toLowerCase()) !== index);
+    if (clash) {
+      setMessage(`Error: Two colours are both called "${clash.name}". Rename one of them.`);
+      return;
+    }
+    if (!sizes.length || sizes.length > 20) {
+      setMessage("Error: Add between 1 and 20 sizes, separated by commas.");
+      return;
+    }
+    const sizesChanged = sizes.join("|") !== product!.sizes.join("|");
+    const nextStock: Record<string, number> = {};
+    for (const color of nextColors) {
+      for (const size of sizes) {
+        const units = parseUnits(stock[`${color.id}|${size}`] ?? "0");
+        if (units === null) {
+          setMessage(`Error: Stock for ${color.name} in ${size} must be a whole number, 0 or more.`);
+          return;
+        }
+        nextStock[stockKey(color.name, size)] = units;
+      }
+    }
+    const stockChanged = !sameStock(nextStock, baseStock);
+    try {
+      const error = await saveOverride(product!.slug, {
+        price: nextPrice,
+        salePrice: nextSale,
+        saleStart,
+        saleEnd,
+        status,
+        isNew,
+        styles,
+        metaTitle,
+        metaDescription,
+        ...(stockChanged ? { stock: nextStock, stockBase: baseStock } : {}),
+        ...(sizesChanged ? { sizes } : {}),
+        gender,
+        category: nextCategory,
+        photos,
+        name: name.trim(),
+        description,
+        fabric,
+        fabricDetail: fabricDetail.trim(),
+        care: care.split("\n").map((line) => line.trim()).filter(Boolean),
+        colors: nextColors.map(({ name, hex }) => ({ name, hex })),
+      });
+      if (error) {
+        setMessage(`Error: ${error}`);
+        return;
+      }
+      if (stockChanged) setBaseStock(nextStock);
+      if (category === NEW_CATEGORY) {
+        setCategory(categorySlug(nextCategory));
+        setNewCategory("");
+      }
+      setMessage("Saved. The storefront uses these details.");
+    } catch (err) {
+      setMessage(`Error: ${err instanceof Error ? err.message : "Could not save product."}`);
+    }
   }
 
-  function removeColor(index: number) {
-    const removed = colors[index]?.name ?? "";
-    setColors((current) => current.filter((_, colorIndex) => colorIndex !== index));
+  async function removeThisProduct() {
+    if (!window.confirm(`Are you sure you want to delete "${product?.name}"? This cannot be undone.`)) return;
+    const error = await deleteProduct(product!.slug);
+    if (error) {
+      setMessage(`Error: ${error}`);
+      return;
+    }
+    router.push("/admin/products");
+  }
+
+  function removeColor(id: string) {
+    setColors((current) => current.filter((color) => color.id !== id));
     setStock((current) => {
       const next = { ...current };
-      for (const size of product!.sizes) delete next[stockKey(removed, size)];
+      for (const size of sizes) delete next[`${id}|${size}`];
       return next;
     });
   }
@@ -130,14 +212,27 @@ export default function ProductEditorPage() {
             Description
             <textarea value={description} onChange={(event) => setDescription(event.target.value)} className="mt-1 min-h-24 w-full border border-line bg-paper p-3 outline-none" />
           </label>
-          <Field label="Fabric" value={fabric} onChange={setFabric} />
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="block text-sm">
+              Fabric
+              <select value={fabric} onChange={(event) => setFabric(event.target.value)} className="mt-1 h-11 w-full border border-line bg-paper px-2">
+                <FabricOptions current={fabric} />
+              </select>
+              <Link href="/admin/fabrics" className="mt-1 block text-xs text-[#ab6446]">Add or rename fabrics</Link>
+            </label>
+            <label className="block text-sm">
+              Weight or detail <span className="text-[#8a847c]">(optional)</span>
+              <input value={fabricDetail} onChange={(event) => setFabricDetail(event.target.value)} maxLength={80} placeholder="160 gsm" className="mt-1 h-11 w-full border border-line bg-paper px-3 outline-none" />
+              <span className="mt-1 block text-xs text-[#8a847c]">Shown as {fabric}{fabricDetail.trim() ? `, ${fabricDetail.trim()}` : ""}.</span>
+            </label>
+          </div>
           <label className="block text-sm">
             Care notes
             <textarea value={care} onChange={(event) => setCare(event.target.value)} className="mt-1 min-h-24 w-full border border-line bg-paper p-3 outline-none" />
             <span className="mt-1 block text-xs text-[#8a847c]">One note per line.</span>
           </label>
           <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="Price (₹)" value={String(price)} onChange={(value) => setPrice(Number(value))} />
+            <Field label="Price (₹)" value={price} onChange={setPrice} invalid={parsePrice(price) === null} hint="Use a number above zero, like 1499." />
             <label className="block text-sm">
               Category
               <select value={category} onChange={(event) => setCategory(event.target.value)} className="mt-1 h-11 w-full border border-line bg-paper px-2">
@@ -146,22 +241,28 @@ export default function ProductEditorPage() {
                     {item.label}
                   </option>
                 ))}
-                {!categoryList().some((item) => item.slug === category) && <option value={category}>{category}</option>}
+                {category !== NEW_CATEGORY && !categoryList().some((item) => item.slug === category) && <option value={category}>{category}</option>}
+                <option value={NEW_CATEGORY}>+ New category…</option>
               </select>
             </label>
+            {category === NEW_CATEGORY && <Field label="New category name" value={newCategory} onChange={setNewCategory} />}
             <label className="block text-sm">
-              Or a new category
-              <input value={newCategory} onChange={(event) => setNewCategory(event.target.value)} className="mt-1 h-11 w-full border border-line bg-paper px-3 outline-none" />
-            </label>
-            <label className="block text-sm">
-              Gender
-              <select value={gender} onChange={(event) => setGender(event.target.value as Gender)} className="mt-1 h-11 w-full border border-line bg-paper px-2">
-                {GENDERS.map((option) => (
-                  <option key={option.id} value={option.id}>
-                    {option.label}
-                  </option>
-                ))}
+              Audience
+              <select value={gender} onChange={(event) => setGender(event.target.value)} className="mt-1 h-11 w-full border border-line bg-paper px-2">
+                <AudienceOptions />
               </select>
+            </label>
+            <label className="block text-sm sm:col-span-2">
+              Sizes
+              <input value={sizeText} onChange={(event) => setSizeText(event.target.value.replace(/\|/g, ""))} placeholder="XS, S, M, L, XL" className="mt-1 h-11 w-full border border-line bg-paper px-3 outline-none" />
+              <span className="mt-1 flex flex-wrap items-center gap-x-3 text-xs text-[#8a847c]">
+                Separate with commas, smallest first. Removing a size drops its stock.
+                {sizesDiffer && audienceSizes.length > 0 && (
+                  <button type="button" className="text-[#ab6446]" onClick={() => setSizeText(audienceSizes.join(", "))}>
+                    Use {audienceOf(gender)?.label} sizes ({audienceSizes.join(", ")})
+                  </button>
+                )}
+              </span>
             </label>
             <label className="block text-sm">
               Status
@@ -171,7 +272,24 @@ export default function ProductEditorPage() {
                 <option value="archived">Archived</option>
               </select>
             </label>
-            <Field label="Sale price (₹)" value={salePrice} onChange={setSalePrice} />
+            <div className="block text-sm sm:col-span-2">
+              Style <span className="text-[#8a847c]">(choose any that fit)</span>
+              <StyleChecks value={styles} onChange={setStyles} />
+            </div>
+            <label className="flex items-start gap-2 self-end pb-2 text-sm">
+              <input type="checkbox" checked={isNew} onChange={(event) => setIsNew(event.target.checked)} className="mt-1" />
+              <span>
+                Show in New in
+                <span className="block text-xs text-[#8a847c]">Lists it under New in at the top of the menu. Turn off once it is no longer new.</span>
+              </span>
+            </label>
+            <Field
+              label="Sale price (₹)"
+              value={salePrice}
+              onChange={setSalePrice}
+              invalid={salePrice.trim() !== "" && (parsePrice(salePrice) === null || (parsePrice(price) !== null && parsePrice(salePrice)! >= parsePrice(price)!))}
+              hint="Must be below the regular price. Leave empty for no sale."
+            />
             <div className="grid grid-cols-2 gap-2">
               <label className="block text-sm">
                 Sale starts
@@ -179,38 +297,36 @@ export default function ProductEditorPage() {
               </label>
               <label className="block text-sm">
                 Sale ends
-                <input type="date" value={saleEnd} onChange={(event) => setSaleEnd(event.target.value)} className="mt-1 h-11 w-full border border-line bg-paper px-2" />
+                <input type="date" value={saleEnd} min={saleStart || undefined} onChange={(event) => setSaleEnd(event.target.value)} className="mt-1 h-11 w-full border border-line bg-paper px-2" />
               </label>
             </div>
           </div>
           <label className="block text-sm">
             Search title
-            <input value={metaTitle} onChange={(event) => setMetaTitle(event.target.value)} className="mt-1 h-11 w-full border border-line bg-paper px-3 outline-none" />
+            <input value={metaTitle} onChange={(event) => setMetaTitle(event.target.value)} placeholder={name.trim() || product.name} className="mt-1 h-11 w-full border border-line bg-paper px-3 outline-none" />
+            <span className="mt-1 block text-xs text-[#8a847c]">Leave empty to use the product name.</span>
           </label>
           <label className="block text-sm">
             Search description
-            <textarea value={metaDescription} onChange={(event) => setMetaDescription(event.target.value)} className="mt-1 min-h-20 w-full border border-line bg-paper p-3 outline-none" />
+            <textarea value={metaDescription} onChange={(event) => setMetaDescription(event.target.value)} placeholder={description} className="mt-1 min-h-20 w-full border border-line bg-paper p-3 outline-none" />
+            <span className="mt-1 block text-xs text-[#8a847c]">Leave empty to use the description.</span>
           </label>
         </div>
       </div>
       <h2 className="mt-10 text-sm">Colours</h2>
       <ul className="mt-3 space-y-2">
-        {colors.map((color, index) => (
-          <li key={index} className="flex flex-wrap items-center gap-2">
-            <input type="color" value={/^#[0-9a-fA-F]{6}$/.test(color.hex) ? color.hex : "#E4D7C4"} onChange={(event) => setColors((current) => current.map((item, itemIndex) => (itemIndex === index ? { ...item, hex: event.target.value.toUpperCase() } : item)))} className="h-11 w-14 border border-line bg-paper" aria-label={`${color.name || "Colour"} swatch`} />
-            <input value={color.name} onChange={(event) => {
-              const next = renameColor(colors, stock, index, event.target.value, product.sizes);
-              setColors(next.colors);
-              setStock(next.stock);
-            }} className="h-11 min-w-40 flex-1 border border-line bg-paper px-3 outline-none" aria-label="Colour name" />
-            <button type="button" className="text-sm text-[#ab6446] disabled:opacity-40" disabled={colors.length === 1} onClick={() => removeColor(index)}>
+        {colors.map((color) => (
+          <li key={color.id} className="flex flex-wrap items-center gap-2">
+            <input type="color" value={/^#[0-9a-fA-F]{6}$/.test(color.hex) ? color.hex : "#E4D7C4"} onChange={(event) => setColors((current) => current.map((item) => (item.id === color.id ? { ...item, hex: event.target.value.toUpperCase() } : item)))} className="h-11 w-14 border border-line bg-paper" aria-label={`${color.name || "Colour"} swatch`} />
+            <input value={color.name} maxLength={40} onChange={(event) => setColors((current) => current.map((item) => (item.id === color.id ? { ...item, name: event.target.value.replace(/\|/g, "") } : item)))} className="h-11 min-w-40 flex-1 border border-line bg-paper px-3 outline-none" aria-label="Colour name" />
+            <button type="button" className="text-sm text-[#ab6446] disabled:opacity-40" disabled={colors.length === 1} onClick={() => removeColor(color.id)}>
               Remove
             </button>
           </li>
         ))}
       </ul>
       {colors.length < 8 && (
-        <button type="button" className="mt-3 text-sm text-[#ab6446]" onClick={() => setColors((current) => [...current, { name: nextColorName(current), hex: "#E4D7C4" }])}>
+        <button type="button" className="mt-3 text-sm text-[#ab6446]" onClick={() => setColors((current) => [...current, { id: newColorId(), name: nextColorName(current), hex: "#E4D7C4" }])}>
           Add a colour
         </button>
       )}
@@ -251,9 +367,9 @@ export default function ProductEditorPage() {
       )}
       <h2 className="mt-10 text-sm">Variants</h2>
       <ul className="mt-3 divide-y divide-line border border-line bg-paper md:hidden">
-        {colors.filter((color) => color.name.trim()).flatMap((color) =>
-          product.sizes.map((size) => {
-            const key = stockKey(color.name, size);
+        {colors.flatMap((color) =>
+          sizes.map((size) => {
+            const key = `${color.id}|${size}`;
             return (
               <li key={key} className="p-4 text-sm">
                 <p>{color.name} · {size}</p>
@@ -261,11 +377,11 @@ export default function ProductEditorPage() {
                 <label className="mt-3 block text-[#6d6960]">
                   Stock
                   <input
-                    type="number"
-                    min={0}
-                    value={stock[key] ?? 0}
-                    onChange={(event) => setStock((current) => ({ ...current, [key]: Number(event.target.value) }))}
-                    className="mt-1 h-11 w-full border border-line bg-cream px-3 text-[#2a2925] outline-none"
+                    inputMode="numeric"
+                    value={stock[key] ?? "0"}
+                    aria-invalid={parseUnits(stock[key] ?? "0") === null}
+                    onChange={(event) => setStock((current) => ({ ...current, [key]: event.target.value }))}
+                    className="mt-1 h-11 w-full border border-line bg-cream px-3 text-[#2a2925] outline-none aria-[invalid=true]:border-[#ab6446]"
                   />
                 </label>
               </li>
@@ -284,9 +400,9 @@ export default function ProductEditorPage() {
             </tr>
           </thead>
           <tbody>
-            {colors.filter((color) => color.name.trim()).flatMap((color) =>
-              product.sizes.map((size) => {
-                const key = stockKey(color.name, size);
+            {colors.flatMap((color) =>
+              sizes.map((size) => {
+                const key = `${color.id}|${size}`;
                 return (
                   <tr key={key} className="border-b border-line">
                     <td className="px-4 py-2">{sku(product.slug, color.name, size)}</td>
@@ -294,11 +410,11 @@ export default function ProductEditorPage() {
                     <td>{size}</td>
                     <td className="px-4 py-2">
                       <input
-                        type="number"
-                        min={0}
-                        value={stock[key] ?? 0}
-                        onChange={(event) => setStock((current) => ({ ...current, [key]: Number(event.target.value) }))}
-                        className="h-10 w-24 border border-line bg-cream px-2"
+                        inputMode="numeric"
+                        value={stock[key] ?? "0"}
+                        aria-invalid={parseUnits(stock[key] ?? "0") === null}
+                        onChange={(event) => setStock((current) => ({ ...current, [key]: event.target.value }))}
+                        className="h-10 w-24 border border-line bg-cream px-2 aria-[invalid=true]:border-[#ab6446]"
                       />
                     </td>
                   </tr>
@@ -308,26 +424,52 @@ export default function ProductEditorPage() {
           </tbody>
         </table>
       </div>
-      {message && <p className="mt-4 text-sm">{message}</p>}
-      <button className="mt-4 h-12 bg-ink px-6 text-xs tracking-[0.16em] text-cream">SAVE PRODUCT</button>
+      {message && (
+        <p className={`mt-4 text-sm ${message.startsWith("Error:") ? "text-[#ab6446]" : "text-[#2a2925]"}`}>
+          {message}
+        </p>
+      )}
+      <div className="mt-4 flex flex-wrap items-center gap-3">
+        <button type="submit" className="h-12 bg-ink px-6 text-xs tracking-[0.16em] text-cream">SAVE PRODUCT</button>
+        <button
+          type="button"
+          onClick={() => void removeThisProduct()}
+          className="h-12 border border-[#ab6446] px-6 text-xs tracking-[0.16em] text-[#ab6446] hover:bg-[#ab6446] hover:text-white transition-colors"
+        >
+          DELETE PRODUCT
+        </button>
+      </div>
     </form>
   );
 }
 
-function renameColor(colors: Colorway[], stock: Record<string, number>, index: number, name: string, sizes: Size[]) {
-  const previous = colors[index]?.name ?? "";
-  const nextColors = colors.map((color, colorIndex) => (colorIndex === index ? { ...color, name } : color));
-  const trimmed = name.trim();
-  if (!trimmed || trimmed === previous) return { colors: nextColors, stock };
-  const nextStock = { ...stock };
-  for (const size of sizes) {
-    const from = stockKey(previous, size);
-    const to = stockKey(trimmed, size);
-    if (from === to || !(from in nextStock)) continue;
-    nextStock[to] = nextStock[from];
-    delete nextStock[from];
+const NEW_CATEGORY = "__new__";
+
+// Colours carry a local id while editing so stock follows the colour, not its name.
+type EditColor = Colorway & { id: string };
+
+let colorSeq = 0;
+function newColorId() {
+  colorSeq += 1;
+  return `c${colorSeq}`;
+}
+
+function withIds(colors: Colorway[]): EditColor[] {
+  return colors.map((color) => ({ ...color, id: newColorId() }));
+}
+
+function stockById(colors: EditColor[], stock: Record<string, number>, sizes: Size[]) {
+  const rows: Record<string, string> = {};
+  for (const color of colors) {
+    for (const size of sizes) rows[`${color.id}|${size}`] = String(stock[stockKey(color.name, size)] ?? 0);
   }
-  return { colors: nextColors, stock: nextStock };
+  return rows;
+}
+
+
+function sameStock(left: Record<string, number>, right: Record<string, number>) {
+  const keys = new Set([...Object.keys(left), ...Object.keys(right)]);
+  return [...keys].every((key) => (left[key] ?? 0) === (right[key] ?? 0));
 }
 
 function nextColorName(colors: Colorway[]) {
@@ -349,11 +491,12 @@ function movePhoto(photos: ProductPhoto[], index: number, direction: -1 | 1) {
   return next;
 }
 
-function Field({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
+function Field({ label, value, onChange, invalid = false, hint }: { label: string; value: string; onChange: (value: string) => void; invalid?: boolean; hint?: string }) {
   return (
     <label className="block text-sm">
       {label}
-      <input value={value} onChange={(event) => onChange(event.target.value)} className="mt-1 h-11 w-full border border-line bg-paper px-3 outline-none" />
+      <input value={value} onChange={(event) => onChange(event.target.value)} aria-invalid={invalid} className="mt-1 h-11 w-full border border-line bg-paper px-3 outline-none aria-[invalid=true]:border-[#ab6446]" />
+      {invalid && hint && <span className="mt-1 block text-xs text-[#ab6446]">{hint}</span>}
     </label>
   );
 }

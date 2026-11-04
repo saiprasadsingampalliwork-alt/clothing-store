@@ -5,16 +5,17 @@ import { useState } from "react";
 import { ProductVisual } from "@/components/product-visual";
 import { formatINR } from "@/lib/money";
 import { withStoreSale } from "@/lib/sale";
-import { GENDERS, getProduct, liveProduct, productGender, unitsAvailable, type Product } from "@/lib/catalog";
+import { audienceLabel, getProduct, liveProduct, onSale, productGender, unitsAvailable, type Product } from "@/lib/catalog";
 import { useStore } from "@/lib/store";
+import { Reveal } from "@/components/reveal";
 
 export default function WishlistPage() {
-  const { wishlist, user, ready } = useStore();
+  const { wishlist, user, ready, overrides } = useStore();
   if (!ready) return null;
   const items = wishlist
     .map((item) => {
       const product = getProduct(item.slug);
-      return product ? { product, color: item.color } : null;
+      return product && onSale(product.slug, overrides) ? { product, color: item.color } : null;
     })
     .filter((item) => item != null);
 
@@ -33,11 +34,11 @@ export default function WishlistPage() {
           </Link>
         </div>
       ) : (
-        <div className="reveal mt-8 grid grid-cols-1 gap-x-6 gap-y-12 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+        <Reveal className="mt-8 grid grid-cols-1 gap-x-6 gap-y-12 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {items.map((item) => (
             <WishCard key={item.product.slug} product={item.product} color={item.color} />
           ))}
-        </div>
+        </Reveal>
       )}
     </div>
   );
@@ -74,7 +75,7 @@ function WishCard({ product, color }: { product: Product; color: string }) {
       <Link href={`/product/${product.slug}`}>
         <ProductVisual slug={product.slug} name={product.name} hex={swatch.hex} colorName={swatch.name} silhouette={product.silhouette} photos={product.photos} transitionName={`wish-${product.slug}`} />
       </Link>
-      <p className="mt-4 text-[11px] uppercase tracking-[0.16em] text-muted">{GENDERS.find((gender) => gender.id === productGender(live))?.label}</p>
+      <p className="mt-4 text-[11px] uppercase tracking-[0.16em] text-muted">{audienceLabel(productGender(live))}</p>
       <p className="mt-1 text-sm">{product.name}</p>
       <p className="mt-1 text-sm text-muted">{swatch.name}</p>
       <p className="mt-1 text-sm">

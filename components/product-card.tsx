@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { Icon } from "@/components/icons";
 import { ProductVisual } from "@/components/product-visual";
-import { GENDERS, liveProduct, productGender, unitsAvailable, type Product } from "@/lib/catalog";
+import { audienceLabel, fabricText, liveProduct, productGender, unitsAvailable, type Product } from "@/lib/catalog";
 import { formatINR } from "@/lib/money";
 import { withStoreSale } from "@/lib/sale";
 import { studioSrc, type Silhouette } from "@/lib/studio";
@@ -16,7 +16,7 @@ export function ProductCard({ product, transitionName }: { product: Product; tra
   const hydrated = useHydrated();
   const listed = liveProduct(product, hydrated ? overrides[product.slug] : undefined);
   const live = hydrated ? withStoreSale(listed, settings) : listed;
-  const swatch = live.colors[0];
+  const swatch = live.colors[0] ?? { name: "Default", hex: "#E4D7C4" };
   const saved = wished(live.slug);
   const start = useRef({ x: 0, y: 0 });
   const [picker, setPicker] = useState<"bag" | "heart" | null>(null);
@@ -43,7 +43,7 @@ export function ProductCard({ product, transitionName }: { product: Product; tra
   }, [picker]);
 
   function choose(kind: "bag" | "heart") {
-    const nextColor = live.colors[0].name;
+    const nextColor = live.colors[0]?.name ?? color;
     const preferred = usualSize && live.sizes.includes(usualSize) ? usualSize : live.sizes[0];
     const inStock = live.sizes.find((option) => unitsAvailable(live, nextColor, option) > 0) ?? preferred;
     setColor(nextColor);
@@ -58,9 +58,9 @@ export function ProductCard({ product, transitionName }: { product: Product; tra
   }
 
   function quickHeart() {
-    if (saved || live.colors.length === 1) {
+    if (saved || live.colors.length <= 1) {
       if (!saved) setPop(true);
-      toggleWishlist(live.slug, saved ? color : live.colors[0].name);
+      toggleWishlist(live.slug, saved ? color : (live.colors[0]?.name ?? color));
       return;
     }
     choose("heart");
@@ -108,9 +108,9 @@ export function ProductCard({ product, transitionName }: { product: Product; tra
           transitionName={transitionName}
         />
         <div className="mt-4">
-          <p className="text-[11px] uppercase tracking-[0.16em] text-muted">{GENDERS.find((gender) => gender.id === productGender(live))?.label}</p>
+          <p className="text-[11px] uppercase tracking-[0.16em] text-muted">{audienceLabel(productGender(live))}</p>
           <p className="mt-1 text-sm">{live.name}</p>
-          <p className="mt-1 text-sm text-muted">{live.fabric}</p>
+          <p className="mt-1 text-sm text-muted">{fabricText(live)}</p>
           <p className="mt-1 text-xs text-muted">{live.colors.map((entry) => entry.name).join(" · ")}</p>
           <p className="mt-2 text-sm">
             {formatINR(live.price)}

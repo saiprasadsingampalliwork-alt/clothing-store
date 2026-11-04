@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { FormEvent, useState } from "react";
 import { StatusPill, OutlineButton, AdminHeader } from "@/components/admin-shell";
-import { orderCode, paymentLabel, placedAt, sku } from "@/lib/admin";
+import { orderCode, paymentLabel, placedAt, sku, NEXT_STATUS } from "@/lib/admin";
 import { formatINR, includedGst } from "@/lib/money";
 import { useStore, type OrderStatus } from "@/lib/store";
 
@@ -12,7 +12,7 @@ const statuses: OrderStatus[] = ["Confirmed", "Packed", "Shipped", "Out for deli
 
 export default function AdminOrderPage() {
   const { id } = useParams<{ id: string }>();
-  const { orders, updateOrder, createShipment } = useStore();
+  const { orders, updateOrder, createShipment, retryRefund } = useStore();
   const order = orders.find((entry) => entry.id === id);
   const [status, setStatus] = useState<OrderStatus>(order?.status && statuses.includes(order.status as OrderStatus) ? (order.status as OrderStatus) : "Confirmed");
   const [notes, setNotes] = useState(order?.notes ?? "");
@@ -26,8 +26,14 @@ export default function AdminOrderPage() {
 
   async function saveStatus(event: FormEvent) {
     event.preventDefault();
+    if (status === order!.status) return;
     const error = await updateOrder(order!.id, { status });
     setMessage(error ?? "Status updated.");
+  }
+
+  async function retry() {
+    const error = await retryRefund(order!.id);
+    setMessage(error ? `Refund: ${error}` : "Refund started again.");
   }
 
   async function saveNote(event: FormEvent) {
@@ -157,12 +163,21 @@ export default function AdminOrderPage() {
             <label className="mt-3 block text-sm text-[#6d6960]">
               Order status
               <select value={status} onChange={(event) => setStatus(event.target.value as OrderStatus)} className="mt-1 h-11 w-full border border-[#e6dfd4] bg-white px-2 text-[#2a2925]">
-                {statuses.map((item) => (
+                {[order.status, ...(NEXT_STATUS[order.status] ?? [])].map((item) => (
                   <option key={item}>{item}</option>
                 ))}
               </select>
             </label>
-            <button className="mt-4 h-9 bg-[#2a2925] px-3 text-[11px] tracking-[0.14em] text-[#fbf8f4]">UPDATE STATUS</button>
+            <p className="mt-2 text-xs text-[#8a847c]">
+              {(NEXT_STATUS[order.status] ?? []).length
+                ? order.payment !== "cod" && order.paymentStatus === "paid"
+                  ? "Only the next steps are listed. Cancelling refunds the payment in full."
+                  : "Only the next steps are listed."
+                : order.status === "Return requested"
+                  ? "Decide the return under Returns."
+                  : "This order is closed."}
+            </p>
+            <button disabled={!(NEXT_STATUS[order.status] ?? []).length} className="mt-4 h-9 bg-[#2a2925] px-3 text-[11px] tracking-[0.14em] text-[#fbf8f4] disabled:opacity-40">UPDATE STATUS</button>
           </form>
           <section className="border border-[#e6dfd4] bg-white p-5 text-sm">
             <h2 className="font-medium">Customer</h2>
@@ -175,6 +190,7 @@ export default function AdminOrderPage() {
             <p className="mt-3 text-[#6d6960]">
               {order.address.line1}
               {order.address.line2 ? `, ${order.address.line2}` : ""}
+              {order.address.landmark ? `, near ${order.address.landmark}` : ""}
               <br />
               {order.address.city}, {order.address.state} – {order.address.pin}
             </p>
@@ -182,10 +198,25 @@ export default function AdminOrderPage() {
           <section className="border border-[#e6dfd4] bg-white p-5 text-sm">
             <h2 className="font-medium">Payment</h2>
             <dl className="mt-3 space-y-2">
-              <div className="flex justify-between"><dt className="text-[#6d6960]">Method</dt><dd>{paymentLabel(order.payment).replace(" · Paid", "")}</dd></div>
-              <div className="flex justify-between"><dt className="text-[#6d6960]">Status</dt><dd>{order.payment === "cod" ? "Due" : "Paid"}</dd></div>
+              <div className="flex justify-between"><dt className="text-[#6d6960]">Method</dt><dd>{paymentLabel(order.payment).split(" · ")[0]}</dd></div>
+              <div className="flex justify-between"><dt className="text-[#6d6960]">Status</dt><dd>{paymentState(order)}</dd></div>
               <div className="flex justify-between"><dt className="text-[#6d6960]">Gateway ID</dt><dd className="text-[#6d6960]">{order.razorpayPaymentId || "—"}</dd></div>
+              {order.refundStatus && (
+                <div className="flex justify-between gap-3">
+                  <dt className="text-[#6d6960]">Refund</dt>
+                  <dd className={order.refundStatus === "failed" ? "text-[#ab6446]" : ""}>
+                    {order.refundStatus === "refunded" ? "Refunded" : order.refundStatus === "pending" ? "In progress" : "Failed"}
+                  </dd>
+                </div>
+              )}
             </dl>
+            {order.refundNote && <p className="mt-2 text-xs text-[#8a847c]">{order.refundNote}</p>}
+            {order.paymentStatus === "demo" && <p className="mt-2 text-xs text-[#8a847c]">Placed in demo mode. No money was taken, so there is nothing to refund.</p>}
+            {order.refundStatus === "failed" && (
+              <button type="button" onClick={() => void retry()} className="mt-3 h-9 border border-[#ab6446] px-3 text-[11px] tracking-[0.14em] text-[#ab6446]">
+                RETRY REFUND
+              </button>
+            )}
           </section>
           <form id="shipment" onSubmit={ship} className="border border-[#e6dfd4] bg-white p-5 text-sm">
             <h2 className="font-medium">Shipment</h2>
@@ -205,4 +236,11 @@ export default function AdminOrderPage() {
       </div>
     </div>
   );
+}
+
+function paymentState(order: { payment: string; paymentStatus?: string; status: string }) {
+  if (order.payment === "cod") return order.status === "Delivered" || order.status === "Returned" ? "Collected on delivery" : "Due on delivery";
+  if (order.paymentStatus === "demo") return "Demo, not charged";
+  if (order.paymentStatus === "free") return "Nothing to pay";
+  return "Paid";
 }

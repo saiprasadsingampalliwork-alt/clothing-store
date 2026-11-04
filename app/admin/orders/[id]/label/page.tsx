@@ -18,6 +18,7 @@ export default function LabelPage() {
         <br />
         {order.address.line1}
         {order.address.line2 ? `, ${order.address.line2}` : ""}
+              {order.address.landmark ? `, near ${order.address.landmark}` : ""}
         <br />
         {order.address.city}, {order.address.state} {order.address.pin}
         <br />

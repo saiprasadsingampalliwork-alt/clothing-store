@@ -115,8 +115,8 @@ export default function SignInPage() {
             </form>
           ) : codeSent ? (
             <form onSubmit={submitCode} className="grid gap-4">
-              <p className="text-sm">A WhatsApp code is on its way to this mobile.</p>
-              {previewCode && <p className="text-sm">WhatsApp is not configured yet, so the code is shown here: {previewCode}</p>}
+              <p className="text-sm">If this mobile has an account, a WhatsApp code is on its way to it.</p>
+              {previewCode && <p className="text-sm">Demo mode: WhatsApp is not set up, so the code is shown here: {previewCode}</p>}
               <Input label="Code" value={code} onChange={(value) => setCode(value.replace(/\D/g, "").slice(0, 6))} />
               {error && <p className="text-sm">{error}</p>}
               <button className={`motion-btn relative h-12 w-full bg-terra text-sm tracking-[0.16em] text-cream ${done ? "done" : ""}`}>
