@@ -779,3 +779,151 @@ a.underline:hover::after {
     animation: none;
   }
 }
+
+/* Working: a thin line at the top of the page while the site talks to the server (components/activity.tsx). */
+.activity-bar {
+  position: fixed;
+  inset: 0 0 auto 0;
+  z-index: 100;
+  height: 3px;
+  overflow: hidden;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 240ms var(--ease);
+}
+
+.activity-bar.on {
+  opacity: 1;
+}
+
+.activity-bar::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 40%;
+  background: linear-gradient(90deg, transparent, var(--color-terra) 30%, var(--color-terra) 70%, transparent);
+  /* A faint light edge keeps it visible on the olive announcement strip as well as on cream. */
+  box-shadow: 0 1px 0 rgb(247 244 238 / 0.7);
+  animation: activity-slide 1.2s var(--ease) infinite;
+}
+
+@keyframes activity-slide {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(250%);
+  }
+}
+
+/* The button that started a request: a soft sweep along its bottom edge, in its own text colour. */
+[data-busy] {
+  position: relative;
+  cursor: progress;
+}
+
+[data-busy]::before {
+  content: "";
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, currentColor, transparent) no-repeat;
+  background-size: 45% 100%;
+  opacity: 0.75;
+  animation: busy-sweep 1s linear infinite;
+}
+
+@keyframes busy-sweep {
+  from {
+    background-position: -60% 0;
+  }
+  to {
+    background-position: 160% 0;
+  }
+}
+
+/* After a few seconds: a short note, since a free server may be waking up. */
+.activity-note {
+  position: fixed;
+  left: 50%;
+  bottom: 20px;
+  z-index: 100;
+  display: flex;
+  max-width: min(92vw, 30rem);
+  align-items: center;
+  gap: 10px;
+  border: 1px solid var(--color-line);
+  background: var(--color-paper);
+  padding: 10px 14px;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--color-ink);
+  box-shadow: 0 6px 24px rgb(28 26 23 / 0.08);
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, 8px);
+  transition:
+    opacity 320ms var(--ease),
+    transform 320ms var(--ease);
+}
+
+.activity-note.on {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+.activity-dots {
+  display: inline-flex;
+  gap: 3px;
+}
+
+.activity-dots span {
+  height: 5px;
+  width: 5px;
+  border-radius: 999px;
+  background: var(--color-terra);
+  animation: activity-dot 1.2s var(--ease) infinite;
+}
+
+.activity-dots span:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.activity-dots span:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@keyframes activity-dot {
+  0%,
+  80%,
+  100% {
+    opacity: 0.25;
+  }
+  40% {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .activity-bar::before {
+    animation: none;
+    width: 100%;
+    background: var(--color-terra);
+    opacity: 0.6;
+  }
+
+  [data-busy]::before {
+    animation: none;
+    background-size: 100% 100%;
+    opacity: 0.5;
+  }
+
+  .activity-dots span {
+    animation: none;
+    opacity: 0.6;
+  }
+
+  .activity-note {
+    transition: none;
+  }
+}

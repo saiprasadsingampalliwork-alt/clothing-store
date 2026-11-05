@@ -21,7 +21,68 @@ export function setCustomerToken(token: string | null) {
   else localStorage.removeItem(CUSTOMER_TOKEN);
 }
 
+/*
+ * Activity: how many requests are in flight, so the site can show it is working (components/activity.tsx).
+ * The button the shopper or staff member just pressed is marked busy too, until its requests finish.
+ */
+type Activity = { inflight: number; since: number | null };
+let activity: Activity = { inflight: 0, since: null };
+const listeners = new Set<() => void>();
+const busyCount = new WeakMap<HTMLElement, number>();
+let lastPressed: { element: HTMLElement; at: number } | null = null;
+
+export function apiActivity() {
+  return activity;
+}
+
+export function subscribeApiActivity(listener: () => void) {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
+}
+
+/** Remembers the button just pressed, so a request it starts can mark it busy. */
+export function notePressed(element: HTMLElement) {
+  lastPressed = { element, at: Date.now() };
+}
+
+function setActivity(next: Activity) {
+  activity = next;
+  listeners.forEach((listener) => listener());
+}
+
+function begin() {
+  setActivity({ inflight: activity.inflight + 1, since: activity.since ?? Date.now() });
+  // A request that starts right after a press belongs to that button.
+  const pressed = lastPressed && Date.now() - lastPressed.at < 800 && lastPressed.element.isConnected ? lastPressed.element : null;
+  if (pressed) {
+    busyCount.set(pressed, (busyCount.get(pressed) ?? 0) + 1);
+    pressed.setAttribute("data-busy", "");
+    pressed.setAttribute("aria-busy", "true");
+  }
+  return () => {
+    const inflight = Math.max(0, activity.inflight - 1);
+    setActivity({ inflight, since: inflight ? activity.since : null });
+    if (pressed) {
+      const left = (busyCount.get(pressed) ?? 1) - 1;
+      busyCount.set(pressed, left);
+      if (left <= 0) {
+        pressed.removeAttribute("data-busy");
+        pressed.removeAttribute("aria-busy");
+      }
+    }
+  };
+}
+
 export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const done = typeof window === "undefined" ? () => undefined : begin();
+  try {
+    return await request<T>(path, init);
+  } finally {
+    done();
+  }
+}
+
+async function request<T>(path: string, init: RequestInit): Promise<T> {
   const headers = new Headers(init.headers);
   if (init.body && !headers.has("content-type")) headers.set("content-type", "application/json");
   const staff = staffToken();
