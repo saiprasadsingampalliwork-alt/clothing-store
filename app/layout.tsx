@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Roboto_Condensed } from "next/font/google";
+import { ActivityIndicator } from "@/components/activity";
 import { SiteShell } from "@/components/site-shell";
 import { StoreProvider } from "@/lib/store";
 import "./globals.css";
@@ -26,6 +27,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className={`${robotoCondensed.className} antialiased`}>
         <StoreProvider>
           <SiteShell>{children}</SiteShell>
+          <ActivityIndicator />
         </StoreProvider>
       </body>
     </html>
