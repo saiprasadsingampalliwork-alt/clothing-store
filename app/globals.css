@@ -252,18 +252,18 @@ a.underline:hover::after {
 
 /* Smaller, fixed cards: a few sit centred on wide screens, more scroll. */
 .snap-row.snap-row-compact > * {
-  width: 72%;
+  width: 58%;
 }
 
 @media (min-width: 640px) {
   .snap-row.snap-row-compact > * {
-    width: 15rem;
+    width: 12rem;
   }
 }
 
 @media (min-width: 1024px) {
   .snap-row.snap-row-compact > * {
-    width: 16.5rem;
+    width: 13.2rem;
   }
 }
 

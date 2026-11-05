@@ -17,9 +17,18 @@ export function AudienceBand() {
         {audiences.map((audience) => {
           const tile = audienceTile(content, audience.slug, audiencePhoto(audience.slug));
           return (
-            <Link key={audience.slug} href={`/shop?gender=${audience.slug}`}>
-              <img src={tile.image.src} alt={tile.image.alt} width={768} height={1024} className="aspect-[3/4] w-full bg-[#efeae2] object-cover" />
-              <p className="serif mt-3 text-2xl">{audience.label}</p>
+            <Link key={audience.slug} href={`/shop?gender=${audience.slug}`} className="group block text-center">
+              {/* Circular crop, set a little above centre so faces in the portrait photos stay in frame. */}
+              <span className="block overflow-hidden rounded-full">
+                <img
+                  src={tile.image.src}
+                  alt={tile.image.alt}
+                  width={768}
+                  height={768}
+                  className="aspect-square w-full bg-[#efeae2] object-cover object-[50%_28%] transition-transform duration-500 group-hover:scale-[1.04]"
+                />
+              </span>
+              <p className="serif mt-4 text-xl">{audience.label}</p>
               {tile.text && <p className="mt-1 text-sm text-muted">{tile.text}</p>}
             </Link>
           );
