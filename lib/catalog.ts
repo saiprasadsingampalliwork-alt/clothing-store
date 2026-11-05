@@ -792,6 +792,21 @@ export function audiencePhoto(slug: string) {
   return { src: PLACEHOLDER_IMAGE, alt: `${label}. Photo to be added.` };
 }
 
+/**
+ * The picture for a category tile: its own photo, or else the first real photo from a product in it
+ * that shoppers can see, or else the "photo to come" drawing. A category made from the product form
+ * starts without a photo, so its tile is never left empty.
+ */
+export function categoryPhoto(category: Pick<ShopCategory, "slug" | "label" | "image">, overrides: Record<string, ProductOverride | undefined> = {}) {
+  if (category.image) return { src: category.image, own: true };
+  for (const product of catalogSource()) {
+    if (product.category !== category.slug || !onSale(product.slug, overrides)) continue;
+    const photo = product.photos?.find((item) => item.src && item.src !== PLACEHOLDER_IMAGE);
+    if (photo) return { src: photo.src, own: false };
+  }
+  return { src: PLACEHOLDER_IMAGE, own: false };
+}
+
 /** "XS, S, M" or "2-3Y, 3-4Y" into a clean list, keeping the order given and dropping repeats. */
 export function parseSizes(value: string) {
   const seen = new Set<string>();

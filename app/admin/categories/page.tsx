@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useState } from "react";
-import { catalogSource, categoryList } from "@/lib/catalog";
+import { catalogSource, categoryList, categoryPhoto, type ShopCategory } from "@/lib/catalog";
 import { useStore } from "@/lib/store";
 import { AdminHeader, SolidButton } from "@/components/admin-shell";
 import { ImageUpload } from "@/components/image-upload";
@@ -9,7 +9,7 @@ import { ImageUpload } from "@/components/image-upload";
 const blank = { slug: "", label: "", blurb: "", image: "", chart: "upper" as "upper" | "lower" };
 
 export default function CategoriesPage() {
-  const { saveCategory, removeCategory, reorderCategories } = useStore();
+  const { saveCategory, removeCategory, reorderCategories, overrides } = useStore();
   const categories = categoryList();
   const [draft, setDraft] = useState(blank);
   const [message, setMessage] = useState<string | null>(null);
@@ -91,9 +91,13 @@ export default function CategoriesPage() {
             return (
               <li key={category.slug} className="px-4 py-4 text-sm">
                 <span className="flex items-start justify-between gap-3">
-                  <button className="min-w-0 text-left" onClick={() => setDraft({ slug: category.slug, label: category.label, blurb: category.blurb, image: category.image, chart: category.chart })}>
-                    <span className="block">{category.label}</span>
-                    <span className="mt-1 block text-xs text-[#8a847c]">{category.blurb || category.slug}</span>
+                  <button className="flex min-w-0 items-start gap-3 text-left" onClick={() => setDraft({ slug: category.slug, label: category.label, blurb: category.blurb, image: category.image, chart: category.chart })}>
+                    <TileThumb category={category} overrides={overrides} />
+                    <span className="min-w-0">
+                      <span className="block">{category.label}</span>
+                      <span className="mt-1 block text-xs text-[#8a847c]">{category.blurb || category.slug}</span>
+                      <MissingPhoto category={category} />
+                    </span>
                   </button>
                   <button type="button" className="shrink-0 text-[#ab6446] disabled:text-[#c4bfb6]" disabled={pieces > 0} onClick={() => void remove(category.slug, category.label)}>
                     {pieces > 0 ? "In use" : "Remove"}
@@ -126,9 +130,13 @@ export default function CategoriesPage() {
               return (
                 <tr key={category.slug} className="border-b border-[#efeae2]">
                   <td className="px-5 py-3">
-                    <button className="text-left" onClick={() => setDraft({ slug: category.slug, label: category.label, blurb: category.blurb, image: category.image, chart: category.chart })}>
-                      {category.label}
-                      <span className="block text-xs text-[#8a847c]">{category.blurb || category.slug}</span>
+                    <button className="flex items-center gap-3 text-left" onClick={() => setDraft({ slug: category.slug, label: category.label, blurb: category.blurb, image: category.image, chart: category.chart })}>
+                      <TileThumb category={category} overrides={overrides} />
+                      <span>
+                        {category.label}
+                        <span className="block text-xs text-[#8a847c]">{category.blurb || category.slug}</span>
+                        <MissingPhoto category={category} />
+                      </span>
                     </button>
                   </td>
                   <td>{pieces}</td>
@@ -165,4 +173,14 @@ function MoveButtons({ index, last, onMove }: { index: number; last: number; onM
       </button>
     </>
   );
+}
+
+/** The picture this category shows on the homepage, as it will appear there. */
+function TileThumb({ category, overrides }: { category: ShopCategory; overrides: Parameters<typeof categoryPhoto>[1] }) {
+  return <img src={categoryPhoto(category, overrides).src} alt="" className="h-12 w-10 shrink-0 bg-[#f3efe8] object-cover" />;
+}
+
+function MissingPhoto({ category }: { category: ShopCategory }) {
+  if (category.image) return null;
+  return <span className="mt-1 block text-xs text-[#ab6446]">No photo of its own; the homepage borrows one from its products. Click to add one.</span>;
 }
