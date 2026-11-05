@@ -311,8 +311,27 @@ export function OrdersTable({
   );
 }
 
+/**
+ * A list filter: same height as the search box, a steady width, and a darker look while it is filtering,
+ * so it is clear at a glance which filters are on.
+ */
+export function FilterSelect({ value, onChange, label, children }: { value: string; onChange: (value: string) => void; label: string; children: ReactNode }) {
+  const active = value !== "all";
+  return (
+    <select
+      value={value}
+      onChange={(event) => onChange(event.target.value)}
+      aria-label={label}
+      className={`h-9 w-40 truncate border px-3 text-sm ${active ? "border-[#2a2925] bg-[#f3efe8] text-[#2a2925]" : "border-[#e6dfd4] bg-white text-[#6d6960]"}`}
+    >
+      <option value="all">{active ? `All ${label.toLowerCase()}` : label}</option>
+      {children}
+    </select>
+  );
+}
+
 /** Audience choices grouped as Adults, Kids, Baby. Switched-off audiences stay selectable so pieces can be prepared before launch. */
-export function AudienceOptions() {
+export function AudienceOptions({ compact = false }: { compact?: boolean } = {}) {
   return (
     <>
       {AUDIENCE_GROUPS.map((group) => {
@@ -323,7 +342,7 @@ export function AudienceOptions() {
             {members.map((audience) => (
               <option key={audience.slug} value={audience.slug}>
                 {audience.label}
-                {audience.active ? "" : " (not in shop yet)"}
+                {audience.active ? "" : compact ? " · off" : " (not in shop yet)"}
               </option>
             ))}
           </optgroup>

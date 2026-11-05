@@ -6,7 +6,7 @@ import { catalogSku, parsePrice, parseUnits } from "@/lib/admin";
 import { catalogSource, categoryLabel, categoryList, allAudiences, allStyles, audienceLabel, liveProduct, PLACEHOLDER_IMAGE, productGender, type Product } from "@/lib/catalog";
 import { formatINR } from "@/lib/money";
 import { useStore } from "@/lib/store";
-import { AdminHeader, AudienceOptions, FabricOptions, FilterChip, StyleChecks, OutlineButton, Showing, SolidButton, StatusPill } from "@/components/admin-shell";
+import { AdminHeader, AudienceOptions, FabricOptions, FilterChip, FilterSelect, StyleChecks, OutlineButton, Showing, SolidButton, StatusPill } from "@/components/admin-shell";
 
 export default function ProductsPage() {
   const { overrides, createProduct, importProducts } = useStore();
@@ -255,37 +255,33 @@ export default function ProductsPage() {
           placeholder="Search products or SKU"
           className="h-9 w-64 border border-[#e6dfd4] bg-white px-3 text-sm outline-none"
         />
-        <select value={category} onChange={(event) => setCategory(event.target.value)} className="h-8 border border-[#e6dfd4] bg-white px-2 text-sm">
-          <option value="all">Category</option>
+        <FilterSelect label="Category" value={category} onChange={setCategory}>
           {categoryList().map((item) => (
             <option key={item.slug} value={item.slug}>
               {item.label}
             </option>
           ))}
-        </select>
-        <select value={status} onChange={(event) => setStatus(event.target.value)} className="h-8 border border-[#e6dfd4] bg-white px-2 text-sm">
-          <option value="all">Status</option>
+        </FilterSelect>
+        <FilterSelect label="Status" value={status} onChange={setStatus}>
           <option value="active">Active</option>
           <option value="draft">Draft</option>
           <option value="archived">Archived</option>
-        </select>
-        <select value={stock} onChange={(event) => setStock(event.target.value)} className="h-8 border border-[#e6dfd4] bg-white px-2 text-sm">
-          <option value="all">Stock</option>
+        </FilterSelect>
+        <FilterSelect label="Stock" value={stock} onChange={setStock}>
           <option value="in">In stock</option>
           <option value="out">Out of stock</option>
-        </select>
-        <select value={gender} onChange={(event) => setGender(event.target.value)} className="h-8 border border-[#e6dfd4] bg-white px-2 text-sm">
-          <option value="all">Audience</option>
-          <AudienceOptions />
-        </select>
-        <select value={style} onChange={(event) => setStyle(event.target.value)} className="h-8 border border-[#e6dfd4] bg-white px-2 text-sm">
-          <option value="all">Style</option>
+        </FilterSelect>
+        <FilterSelect label="Audience" value={gender} onChange={setGender}>
+          <AudienceOptions compact />
+        </FilterSelect>
+        <FilterSelect label="Style" value={style} onChange={setStyle}>
           {allStyles().map((item) => (
             <option key={item.slug} value={item.slug}>
               {item.label}
+              {item.active ? "" : " · off"}
             </option>
           ))}
-        </select>
+        </FilterSelect>
         {(status !== "all" || category !== "all" || gender !== "all" || style !== "all" || stock !== "all") && (
           <FilterChip active={false} onClick={() => { setStatus("all"); setCategory("all"); setGender("all"); setStyle("all"); setStock("all"); }}>
             Clear
